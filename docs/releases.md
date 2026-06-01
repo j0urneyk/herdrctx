@@ -9,7 +9,7 @@ git tag -a v0.0.1 -m "v0.0.1"
 git push origin v0.0.1
 ```
 
-When a `v*` tag is pushed, `.github/workflows/release.yml` first runs validation with read-only permissions, then runs GoReleaser with `release --clean`. GoReleaser builds archives, writes checksums, creates the GitHub Release for the tag, uploads the artifacts, and updates the Homebrew cask in [`j0urneyk/homebrew-tap`](https://github.com/j0urneyk/homebrew-tap).
+When a `v*` tag is pushed, `.github/workflows/release.yml` first runs validation with read-only permissions, then runs GoReleaser with `release --clean`. GoReleaser builds archives, writes checksums, creates the GitHub Release for the tag, uploads the artifacts, and updates the source-built Homebrew formula in [`j0urneyk/homebrew-tap`](https://github.com/j0urneyk/homebrew-tap).
 
 ## Target matrix
 
@@ -35,7 +35,7 @@ permissions:
 
 This lets GoReleaser create GitHub Releases and upload assets with the default `GITHUB_TOKEN` after validation passes.
 
-GoReleaser also needs the `HOMEBREW_TAP_GITHUB_TOKEN` repository secret to push cask updates to `j0urneyk/homebrew-tap`. Use a token with write access to the tap repository.
+The release job also needs the `HOMEBREW_TAP_GITHUB_TOKEN` repository secret to push formula updates to `j0urneyk/homebrew-tap`. Use a token with write access to the tap repository.
 
 ## Local snapshot builds
 

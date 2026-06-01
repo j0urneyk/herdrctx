@@ -15,7 +15,7 @@ Herdr currently supports Linux and macOS. This project follows the same release 
 ## Install with Homebrew
 
 ```sh
-brew install --cask j0urneyk/tap/herdrctx
+brew install j0urneyk/tap/herdrctx
 ```
 
 `herdrctx` still requires `herdr` 0.6.5 or newer on your `PATH`.
