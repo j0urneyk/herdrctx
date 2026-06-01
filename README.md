@@ -12,6 +12,14 @@ It shows your local Herdr sessions, refreshes the list automatically, and lets y
 
 Herdr currently supports Linux and macOS. This project follows the same release target matrix.
 
+## Install with Homebrew
+
+```sh
+brew install --cask j0urneyk/tap/herdrctx
+```
+
+`herdrctx` still requires `herdr` 0.6.5 or newer on your `PATH`.
+
 ## Install from source
 
 ```sh

@@ -17,7 +17,8 @@ builds:
       - linux_arm64
 
 archives:
-  - ids:
+  - id: herdrctx
+    ids:
       - herdrctx
     formats:
       - tar.gz
@@ -25,6 +26,29 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+homebrew_casks:
+  - name: herdrctx
+    ids:
+      - herdrctx
+    binaries:
+      - herdrctx
+    repository:
+      owner: j0urneyk
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    commit_author:
+      name: j0urneyk
+      email: j0urneyk@users.noreply.github.com
+    commit_msg_template: "Update herdrctx to {{ .Tag }}"
+    homepage: https://github.com/j0urneyk/herdrctx
+    description: Terminal UI for managing local Herdr sessions
+    url:
+      verified: github.com/j0urneyk/herdrctx/releases/download/
+    caveats: |
+      herdrctx requires herdr 0.6.5 or newer on your PATH.
 
 changelog:
   sort: asc
