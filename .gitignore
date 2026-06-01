@@ -1,0 +1,7 @@
+/bin/
+/dist/
+/herdrctx
+/coverage.out
+*.test
+.DS_Store
+.pi
