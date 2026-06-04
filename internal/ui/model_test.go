@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1658,13 +1659,9 @@ func searchFixtureSessions() []herdr.Session {
 func assertSessionNames(t *testing.T, sessions []herdr.Session, want []string) {
 	t.Helper()
 
-	if len(sessions) != len(want) {
-		t.Fatalf("session names = %v, want %v", sessionNames(sessions), want)
-	}
-	for i, session := range sessions {
-		if session.Name != want[i] {
-			t.Fatalf("session names = %v, want %v", sessionNames(sessions), want)
-		}
+	got := sessionNames(sessions)
+	if !slices.Equal(got, want) {
+		t.Fatalf("session names = %v, want %v", got, want)
 	}
 }
 
