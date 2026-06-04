@@ -6,11 +6,13 @@ type keyMap struct {
 	Up                key.Binding
 	Down              key.Binding
 	Attach            key.Binding
+	Search            key.Binding
 	NewSession        key.Binding
 	NewSessionWithDir key.Binding
 	Stop              key.Binding
 	Delete            key.Binding
 	Refresh           key.Binding
+	SwitchSearchScope key.Binding
 	Confirm           key.Binding
 	Cancel            key.Binding
 	CloseDialog       key.Binding
@@ -38,6 +40,10 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("enter", "a"),
 			key.WithHelp("enter/a", "attach"),
 		),
+		Search: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "search"),
+		),
 		NewSession: key.NewBinding(
 			key.WithKeys("n"),
 			key.WithHelp("n", "new"),
@@ -57,6 +63,10 @@ func defaultKeyMap() keyMap {
 		Refresh: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
+		),
+		SwitchSearchScope: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "search scope"),
 		),
 		Confirm: key.NewBinding(
 			key.WithKeys("y", "enter"),
@@ -106,13 +116,13 @@ func defaultKeyMap() keyMap {
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Attach, k.NewSession, k.NewSessionWithDir, k.Stop, k.Delete, k.Refresh, k.Help, k.Quit}
+	return []key.Binding{k.Attach, k.Search, k.NewSession, k.NewSessionWithDir, k.Stop, k.Delete, k.Refresh, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Attach},
 		{k.NewSession, k.NewSessionWithDir, k.Stop, k.Delete},
-		{k.Refresh, k.Help, k.Quit},
+		{k.Search, k.SwitchSearchScope, k.Refresh, k.Help, k.Quit},
 	}
 }

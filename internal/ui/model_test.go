@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 
@@ -144,11 +145,259 @@ func TestSetSessionsPreservesSelectionByName(t *testing.T) {
 	}
 }
 
+func TestSearchFiltersSessionsByName(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions(searchFixtureSessions())
+	m.search.input.SetValue("api")
+	m.configureTable()
+
+	assertSessionNames(t, m.visibleSessions(), []string{"api"})
+}
+
+func TestSearchFiltersSessionsByDirectory(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions(searchFixtureSessions())
+	m.search.scope = sessionSearchScopeDirectory
+	m.search.updatePrompt()
+	m.search.input.SetValue("clients")
+	m.configureTable()
+
+	assertSessionNames(t, m.visibleSessions(), []string{"web"})
+}
+
+func TestSearchIsCaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions(searchFixtureSessions())
+	m.search.scope = sessionSearchScopeDirectory
+	m.search.updatePrompt()
+	m.search.input.SetValue("REPO")
+	m.configureTable()
+
+	assertSessionNames(t, m.visibleSessions(), []string{"api", "web"})
+}
+
+func TestSearchTabSwitchesScopeAndKeepsQuery(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions([]herdr.Session{
+		{Name: "repo-name", SessionDir: "/tmp/other"},
+		{Name: "other", SessionDir: "/tmp/repo"},
+	})
+	m.search.input.SetValue("repo")
+	m.configureTable()
+
+	updated, _ := m.handleKey(keyPress("/"))
+	got := updated.(model)
+	updated, cmd := got.handleKey(keyPress("tab"))
+	got = updated.(model)
+	if cmd != nil {
+		t.Fatal("search tab command = non-nil, want nil")
+	}
+	if got.search.scope != sessionSearchScopeDirectory {
+		t.Fatalf("search scope = %s, want directory", got.search.scope)
+	}
+	if got.search.query() != "repo" {
+		t.Fatalf("search query = %q, want repo", got.search.query())
+	}
+	assertSessionNames(t, got.visibleSessions(), []string{"other"})
+}
+
+func TestSearchEnterClosesInputAndKeepsFilter(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions(searchFixtureSessions())
+	m.search.input.SetValue("api")
+	m.configureTable()
+
+	updated, _ := m.handleKey(keyPress("/"))
+	got := updated.(model)
+	updated, cmd := got.handleKey(keyPress("enter"))
+	got = updated.(model)
+	if cmd != nil {
+		t.Fatal("search enter command = non-nil, want nil")
+	}
+	if got.search.active {
+		t.Fatal("search active after enter = true, want false")
+	}
+	if got.search.query() != "api" {
+		t.Fatalf("search query = %q, want api", got.search.query())
+	}
+	assertSessionNames(t, got.visibleSessions(), []string{"api"})
+	if strings.Contains(got.summaryLine(), "search:") {
+		t.Fatalf("summaryLine() = %q, want search state outside summary", got.summaryLine())
+	}
+	if !strings.Contains(got.render(), `Search name: "api"`) {
+		t.Fatalf("render() missing retained search bar:\n%s", got.render())
+	}
+}
+
+func TestSearchBarRendersAboveSessionList(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.width = 100
+	m.height = 30
+	m.loading = false
+	m.setSessions(searchFixtureSessions())
+	m.search.input.SetValue("api")
+	m.search.active = true
+	m.configureTable()
+
+	view := m.render()
+	searchIndex := strings.Index(view, "Search name:")
+	tableIndex := strings.Index(view, "Directory")
+	if searchIndex < 0 {
+		t.Fatalf("render() missing search bar:\n%s", view)
+	}
+	if tableIndex < 0 {
+		t.Fatalf("render() missing session table:\n%s", view)
+	}
+	if searchIndex > tableIndex {
+		t.Fatalf("search bar should render above session table:\n%s", view)
+	}
+	for _, border := range []string{"╭", "╰"} {
+		if !strings.Contains(view, border) {
+			t.Fatalf("render() missing active search border %q:\n%s", border, view)
+		}
+	}
+}
+
+func TestSearchEscClearsFilter(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions(searchFixtureSessions())
+	m.search.input.SetValue("api")
+	m.configureTable()
+
+	updated, _ := m.handleKey(keyPress("/"))
+	got := updated.(model)
+	updated, cmd := got.handleKey(keyPress("esc"))
+	got = updated.(model)
+	if cmd != nil {
+		t.Fatal("search esc command = non-nil, want nil")
+	}
+	if got.search.active {
+		t.Fatal("search active after esc = true, want false")
+	}
+	if got.search.query() != "" {
+		t.Fatalf("search query = %q, want empty", got.search.query())
+	}
+	assertSessionNames(t, got.visibleSessions(), []string{"api", "web", "db"})
+}
+
+func TestFilteredSelectionDrivesActions(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions([]herdr.Session{
+		{Name: "api", Running: false},
+		{Name: "web", Running: false},
+	})
+	m.search.input.SetValue("web")
+	m.configureTable()
+
+	selected, ok := m.selectedSession()
+	if !ok {
+		t.Fatal("selectedSession() ok = false")
+	}
+	if selected.Name != "web" {
+		t.Fatalf("selected session = %q, want web", selected.Name)
+	}
+
+	updated, cmd := m.confirmDelete()
+	got := updated.(model)
+	if cmd != nil {
+		t.Fatal("confirmDelete() command = non-nil, want nil")
+	}
+	if got.confirm == nil {
+		t.Fatal("confirm = nil, want confirmation")
+	}
+	if got.confirm.Session.Name != "web" {
+		t.Fatalf("confirmation session = %q, want web", got.confirm.Session.Name)
+	}
+}
+
+func TestSearchFilterPersistsAcrossRefresh(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions([]herdr.Session{{Name: "api"}, {Name: "web"}})
+	m.search.input.SetValue("api")
+	m.configureTable()
+
+	m.setSessions([]herdr.Session{{Name: "web"}, {Name: "api"}, {Name: "db"}})
+
+	if m.search.query() != "api" {
+		t.Fatalf("search query = %q, want api", m.search.query())
+	}
+	assertSessionNames(t, m.visibleSessions(), []string{"api"})
+	selected, ok := m.selectedSession()
+	if !ok {
+		t.Fatal("selectedSession() ok = false")
+	}
+	if selected.Name != "api" {
+		t.Fatalf("selected session after refresh = %q, want api", selected.Name)
+	}
+}
+
+func TestSearchNoMatchRenderDiffersFromEmptySessionList(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.width = 100
+	m.height = 30
+	m.loading = false
+	m.setSessions(searchFixtureSessions())
+	m.search.input.SetValue("missing")
+	m.configureTable()
+
+	view := m.render()
+	if !strings.Contains(view, `No sessions match name search "missing".`) {
+		t.Fatalf("render() missing no-match search message:\n%s", view)
+	}
+	if strings.Contains(view, "No Herdr sessions found.") {
+		t.Fatalf("render() used empty-list message for filtered no-match:\n%s", view)
+	}
+}
+
+func TestSearchHelpAndReadmeDocumentBehavior(t *testing.T) {
+	t.Parallel()
+
+	keys := defaultKeyMap()
+	if !bindingHelpExists(keys.ShortHelp(), "/", "search") {
+		t.Fatalf("ShortHelp() = %#v, want search binding", keys.ShortHelp())
+	}
+	if !fullHelpBindingExists(keys.FullHelp(), "tab", "search scope") {
+		t.Fatalf("FullHelp() = %#v, want search scope binding", keys.FullHelp())
+	}
+
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	readmeText := string(readme)
+	for _, want := range []string{"| `/` | Search sessions |", "Switch search between name and directory", "case-insensitive substrings"} {
+		if !strings.Contains(readmeText, want) {
+			t.Fatalf("README.md missing %q", want)
+		}
+	}
+}
+
 func TestSessionRowsSanitizeTerminalControlSequences(t *testing.T) {
 	t.Parallel()
 
 	rows := sessionRows([]herdr.Session{{
 		Name:       "work\x1b[2J",
+		Running:    true,
 		SessionDir: "/tmp/\x1b]52;c;secret\adir",
 		SocketPath: "/tmp/\x00sock",
 	}}, []table.Column{
@@ -169,6 +418,56 @@ func TestSessionRowsSanitizeTerminalControlSequences(t *testing.T) {
 	}
 	if !strings.Contains(row, "work") || !strings.Contains(row, "/tmp/dir") || !strings.Contains(row, "/tmp/sock") {
 		t.Fatalf("row lost safe display text: %q", row)
+	}
+}
+
+func TestSessionRowsDimStoppedSessions(t *testing.T) {
+	t.Parallel()
+
+	rows := sessionRows([]herdr.Session{
+		{Name: "running", Running: true, SessionDir: "/tmp/running"},
+		{Name: "stopped", Running: false, SessionDir: "/tmp/stopped"},
+	}, []table.Column{
+		{Width: 30},
+		{Width: 10},
+		{Width: 30},
+		{Width: 30},
+	})
+	if len(rows) != 2 {
+		t.Fatalf("len(rows) = %d, want 2", len(rows))
+	}
+
+	runningRow := strings.Join(rows[0], "|")
+	stoppedRow := strings.Join(rows[1], "|")
+	if strings.Contains(runningRow, "\x1b") {
+		t.Fatalf("running row contains ANSI styling, want unstyled row: %q", runningRow)
+	}
+	if !strings.Contains(stoppedRow, "\x1b") {
+		t.Fatalf("stopped row = %q, want ANSI dim styling", stoppedRow)
+	}
+	if !strings.Contains(stoppedRow, "stopped") {
+		t.Fatalf("stopped row lost safe display text: %q", stoppedRow)
+	}
+}
+
+func TestSelectedStoppedSessionRowUsesSelectedStyleOnly(t *testing.T) {
+	t.Parallel()
+
+	m := NewModel(Options{}).(model)
+	m.setSessions([]herdr.Session{
+		{Name: "running", Running: true},
+		{Name: "stopped", Running: false},
+	})
+	m.table.MoveDown(1)
+	m.refreshTableRowsForCurrentCursor()
+
+	rows := m.table.Rows()
+	if len(rows) != 2 {
+		t.Fatalf("len(rows) = %d, want 2", len(rows))
+	}
+	selectedStoppedRow := strings.Join(rows[1], "|")
+	if strings.Contains(selectedStoppedRow, "\x1b") {
+		t.Fatalf("selected stopped row contains inner ANSI styling, want table selected style to own selection: %q", selectedStoppedRow)
 	}
 }
 
@@ -1346,6 +1645,57 @@ func fakeHerdrCommand(t *testing.T, body string) string {
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func searchFixtureSessions() []herdr.Session {
+	return []herdr.Session{
+		{Name: "api", SessionDir: "/home/me/repo/api"},
+		{Name: "web", SessionDir: "/home/me/repo/clients/web"},
+		{Name: "db", SessionDir: "/var/lib/db"},
+	}
+}
+
+func assertSessionNames(t *testing.T, sessions []herdr.Session, want []string) {
+	t.Helper()
+
+	if len(sessions) != len(want) {
+		t.Fatalf("session names = %v, want %v", sessionNames(sessions), want)
+	}
+	for i, session := range sessions {
+		if session.Name != want[i] {
+			t.Fatalf("session names = %v, want %v", sessionNames(sessions), want)
+		}
+	}
+}
+
+func sessionNames(sessions []herdr.Session) []string {
+	names := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		names = append(names, session.Name)
+	}
+
+	return names
+}
+
+func bindingHelpExists(bindings []key.Binding, helpKey string, desc string) bool {
+	for _, binding := range bindings {
+		help := binding.Help()
+		if help.Key == helpKey && help.Desc == desc {
+			return true
+		}
+	}
+
+	return false
+}
+
+func fullHelpBindingExists(groups [][]key.Binding, helpKey string, desc string) bool {
+	for _, group := range groups {
+		if bindingHelpExists(group, helpKey, desc) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func keyPress(value string) tea.KeyPressMsg {

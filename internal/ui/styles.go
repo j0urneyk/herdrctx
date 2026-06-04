@@ -37,6 +37,14 @@ var (
 
 	confirmBoxStyle = dialogBoxStyle.
 			BorderForeground(lipgloss.Color("#f5a97f"))
+
+	searchBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#8aadf4")).
+			Padding(0, 1)
+
+	stoppedSessionRowStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#d8b76e"))
 )
 
 func tableStyles() table.Styles {

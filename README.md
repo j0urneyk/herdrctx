@@ -71,6 +71,8 @@ At startup, `herdrctx` checks `herdr --version` and exits with a clear error if 
 | `↑` / `k` | Move up |
 | `↓` / `j` | Move down |
 | `enter` / `a` | Attach to the selected session |
+| `/` | Search sessions |
+| `tab` | Switch search between name and directory while searching |
 | `n` | Create a session in the current directory and attach |
 | `N` | Create a session in a chosen directory and attach |
 | `s` | Stop the selected session, after confirmation |
@@ -81,6 +83,8 @@ At startup, `herdrctx` checks `herdr --version` and exits with a clear error if 
 | `q` / `ctrl+c` | Quit |
 
 The session list refreshes every 3 seconds by default. Custom refresh intervals must be at least 500ms.
+
+Press `/` to show a boxed search bar above the session list. Search matches are case-insensitive substrings. While the search input is open, press `tab` to switch between filtering by session name and filtering by directory path, `enter` to keep the current filter and close the input, or `esc` to clear the filter.
 
 Creating a session always follows Herdr's normal flow: after you submit the form, `herdrctx` hands the terminal to `herdr --session <name>`. You remain in Herdr until you detach from that session. Use `n` for the current directory, or `N` when you want to choose a different start directory. The `N` flow requires a non-empty directory path and creates missing directories automatically.
 

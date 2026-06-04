@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/j0urneyk/herdrctx/internal/herdr"
 )
@@ -58,6 +59,7 @@ type model struct {
 	spinner spinner.Model
 
 	sessions   []herdr.Session
+	search     sessionSearch
 	dialog     *alertDialog
 	confirm    *confirmation
 	newSession *newSessionForm
@@ -154,6 +156,7 @@ func NewModel(opts Options) tea.Model {
 		help:                 help.New(),
 		table:                t,
 		spinner:              spinnerModel(),
+		search:               newSessionSearch(0),
 		defaultDir:           defaultDir,
 		completeHidden:       opts.CompleteHidden.withDefault(),
 		completeVisibleCount: completionVisibleCountWithDefault(opts.CompleteVisibleCount),
@@ -190,6 +193,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.SetWidth(msg.Width)
+		m.search.setWidth(msg.Width)
 		if m.newSession != nil {
 			m.newSession.setWidth(msg.Width)
 		}
@@ -301,8 +305,10 @@ func (m model) handleBusyKey(msg tea.KeyPressMsg) model {
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		m.table.MoveUp(1)
+		m.refreshTableRowsForCurrentCursor()
 	case key.Matches(msg, m.keys.Down):
 		m.table.MoveDown(1)
+		m.refreshTableRowsForCurrentCursor()
 	case key.Matches(msg, m.keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
 	}
@@ -545,6 +551,14 @@ func (m *model) startRefresh() tea.Cmd {
 	})
 }
 
+func (m model) visibleSessions() []herdr.Session {
+	return filterSessionsBySearch(m.sessions, m.search)
+}
+
+func (m model) visibleSessionCount() int {
+	return len(m.visibleSessions())
+}
+
 func (m model) runActionCmd(confirmed confirmation) tea.Cmd {
 	return func() tea.Msg {
 		var err error
@@ -589,6 +603,11 @@ func (m model) validateCurrentDeleteTarget(ctx context.Context, name string) err
 }
 
 func (m *model) configureTable() {
+	selectedName, oldCursor := m.selectedSessionSnapshot()
+	m.configureTablePreserving(selectedName, oldCursor)
+}
+
+func (m *model) configureTablePreserving(selectedName string, oldCursor int) {
 	width := m.width
 	if width <= 0 {
 		width = 100
@@ -618,56 +637,95 @@ func (m *model) configureTable() {
 	m.table.SetWidth(tableWidth)
 
 	height := m.height - 9
+	if m.search.active {
+		height -= 4
+	} else if m.search.hasQuery() {
+		height--
+	}
 	m.table.SetHeight(max(5, height))
-	m.table.SetRows(sessionRows(m.sessions, m.table.Columns()))
+	m.setTableRowsPreserving(selectedName, oldCursor)
 }
 
 func (m *model) setSessions(sessions []herdr.Session) {
-	selectedName := ""
+	selectedName, oldCursor := m.selectedSessionSnapshot()
+	m.sessions = sessions
+	m.setTableRowsPreserving(selectedName, oldCursor)
+}
+
+func (m model) selectedSessionSnapshot() (string, int) {
 	oldCursor := m.table.Cursor()
+	selectedName := ""
 	if selected, ok := m.selectedSession(); ok {
 		selectedName = selected.Name
 	}
 
-	m.sessions = sessions
-	m.table.SetRows(sessionRows(sessions, m.table.Columns()))
+	return selectedName, oldCursor
+}
 
-	if len(sessions) == 0 {
-		m.table.SetCursor(0)
-		return
+func (m *model) setTableRowsPreserving(selectedName string, oldCursor int) {
+	visible := m.visibleSessions()
+	cursor := selectedCursorForVisibleSessions(visible, selectedName, oldCursor)
+	m.table.SetRows(sessionRowsWithSelection(visible, m.table.Columns(), cursor))
+	m.table.SetCursor(cursor)
+}
+
+func (m *model) refreshTableRowsForCurrentCursor() {
+	m.table.SetRows(sessionRowsWithSelection(m.visibleSessions(), m.table.Columns(), m.table.Cursor()))
+}
+
+func selectedCursorForVisibleSessions(visible []herdr.Session, selectedName string, oldCursor int) int {
+	if len(visible) == 0 {
+		return 0
 	}
 
 	cursor := oldCursor
 	if selectedName != "" {
-		for i, session := range sessions {
+		for i, session := range visible {
 			if session.Name == selectedName {
 				cursor = i
 				break
 			}
 		}
 	}
-	if cursor >= len(sessions) {
-		cursor = len(sessions) - 1
+	if cursor >= len(visible) {
+		cursor = len(visible) - 1
 	}
 	if cursor < 0 {
 		cursor = 0
 	}
 
-	m.table.SetCursor(cursor)
+	return cursor
 }
 
 func sessionRows(sessions []herdr.Session, columns []table.Column) []table.Row {
+	return sessionRowsWithSelection(sessions, columns, -1)
+}
+
+func sessionRowsWithSelection(sessions []herdr.Session, columns []table.Column, selectedIndex int) []table.Row {
 	rows := make([]table.Row, 0, len(sessions))
-	for _, session := range sessions {
-		rows = append(rows, table.Row{
+	for i, session := range sessions {
+		row := table.Row{
 			displayCell(session.DisplayName(), columnWidth(columns, 0)),
 			displayCell(session.Status(), columnWidth(columns, 1)),
 			displayCell(session.SessionDir, columnWidth(columns, 2)),
 			displayCell(session.SocketPath, columnWidth(columns, 3)),
-		})
+		}
+		if !session.Running && i != selectedIndex {
+			row = styleTableRow(row, stoppedSessionRowStyle)
+		}
+		rows = append(rows, row)
 	}
 
 	return rows
+}
+
+func styleTableRow(row table.Row, style lipgloss.Style) table.Row {
+	styled := make(table.Row, 0, len(row))
+	for _, cell := range row {
+		styled = append(styled, style.Render(cell))
+	}
+
+	return styled
 }
 
 func displayCell(value string, width int) string {
@@ -683,16 +741,17 @@ func columnWidth(columns []table.Column, index int) int {
 }
 
 func (m model) selectedSession() (herdr.Session, bool) {
-	if len(m.sessions) == 0 {
+	visible := m.visibleSessions()
+	if len(visible) == 0 {
 		return herdr.Session{}, false
 	}
 
 	cursor := m.table.Cursor()
-	if cursor < 0 || cursor >= len(m.sessions) {
+	if cursor < 0 || cursor >= len(visible) {
 		return herdr.Session{}, false
 	}
 
-	return m.sessions[cursor], true
+	return visible[cursor], true
 }
 
 func (m model) sessionByName(name string) (herdr.Session, bool) {
@@ -743,14 +802,23 @@ func (m model) render() string {
 	b.WriteString(titleStyle.Render(title))
 	b.WriteString("\n")
 	b.WriteString(m.summaryLine())
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+	b.WriteString("\n")
+	if searchBar := m.searchBarLine(); searchBar != "" {
+		b.WriteString(searchBar)
+		b.WriteString("\n")
+	}
 
+	visible := m.visibleSessions()
 	switch {
 	case len(m.sessions) == 0 && m.loading:
 		b.WriteString(m.spinner.View())
 		b.WriteString(" Loading sessions…\n")
 	case len(m.sessions) == 0:
 		b.WriteString(warningStyle.Render("No Herdr sessions found."))
+		b.WriteString("\n")
+	case len(visible) == 0:
+		b.WriteString(warningStyle.Render(m.noSearchResultsMessage()))
 		b.WriteString("\n")
 	default:
 		b.WriteString(m.table.View())
@@ -803,6 +871,26 @@ func (m model) summaryLine() string {
 	}
 
 	return subtleStyle.Render(strings.Join(parts, " · "))
+}
+
+func (m model) searchBarLine() string {
+	if !m.search.active && !m.search.hasQuery() {
+		return ""
+	}
+
+	count := fmt.Sprintf("%d/%d", m.visibleSessionCount(), len(m.sessions))
+	if m.search.active {
+		content := m.search.view() + "\n" + subtleStyle.Render(count+" · Tab switches scope · Enter keeps filter · Esc clears")
+		return searchBoxStyle.Width(max(40, min(88, m.width-4))).Render(content)
+	}
+
+	query := sanitizeDisplay(m.search.query())
+	return fmt.Sprintf("Search %s: %q ", m.search.scope, query) + subtleStyle.Render(count+" · / edits")
+}
+
+func (m model) noSearchResultsMessage() string {
+	query := sanitizeDisplay(m.search.query())
+	return fmt.Sprintf("No sessions match %s search %q.", m.search.scope, query)
 }
 
 func (m model) statusView() string {

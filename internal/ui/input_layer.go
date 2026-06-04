@@ -42,6 +42,10 @@ func (m model) inputLayers() []inputLayer {
 		return append(layers, inputLayer{handle: handleNewSessionFormInput})
 	}
 
+	if m.search.active {
+		return append(layers, inputLayer{handle: handleSearchInput})
+	}
+
 	layers = append(layers, inputLayer{handle: handleRootQuitInput})
 	if m.busy != "" {
 		return append(layers, inputLayer{handle: handleBusyInput})
@@ -106,17 +110,53 @@ func handleConfirmationInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 	return inputConsumed(updated.(model), cmd)
 }
 
+func handleSearchInput(m model, msg tea.KeyPressMsg) inputLayerResult {
+	selectedName, oldCursor := m.selectedSessionSnapshot()
+
+	switch {
+	case msg.String() == "enter":
+		m.search.close()
+		m.configureTablePreserving(selectedName, oldCursor)
+		return inputConsumed(m, nil)
+	case key.Matches(msg, m.keys.Dismiss):
+		m.search.clear()
+		m.search.close()
+		m.configureTablePreserving(selectedName, oldCursor)
+		return inputConsumed(m, nil)
+	case key.Matches(msg, m.keys.SwitchSearchScope):
+		m.search.toggleScope()
+		m.configureTablePreserving(selectedName, oldCursor)
+		return inputConsumed(m, nil)
+	}
+
+	oldQuery := m.search.query()
+	var cmd tea.Cmd
+	m.search.input, cmd = m.search.input.Update(msg)
+	if m.search.query() != oldQuery {
+		m.configureTablePreserving(selectedName, oldCursor)
+	}
+
+	return inputConsumed(m, cmd)
+}
+
 func handleRootInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		m.table.MoveUp(1)
+		m.refreshTableRowsForCurrentCursor()
 		return inputConsumed(m, nil)
 	case key.Matches(msg, m.keys.Down):
 		m.table.MoveDown(1)
+		m.refreshTableRowsForCurrentCursor()
 		return inputConsumed(m, nil)
 	case key.Matches(msg, m.keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
 		return inputConsumed(m, nil)
+	case key.Matches(msg, m.keys.Search):
+		selectedName, oldCursor := m.selectedSessionSnapshot()
+		cmd := m.search.open(m.width)
+		m.configureTablePreserving(selectedName, oldCursor)
+		return inputConsumed(m, cmd)
 	case key.Matches(msg, m.keys.Refresh):
 		if m.loading {
 			m.setStatus("Refresh already in progress.", statusInfo)
@@ -144,6 +184,7 @@ func handleRootInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
+	m.refreshTableRowsForCurrentCursor()
 	return inputConsumed(m, cmd)
 }
 
