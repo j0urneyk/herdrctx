@@ -92,6 +92,9 @@ class Terminal:
             if predicate():
                 return
             if self.exited():
+                # The process may exit between the predicate and status checks.
+                if predicate():
+                    return
                 raise AssertionError(f"TUI exited ({self.status}) while waiting for {description}")
         raise TimeoutError(f"Timed out waiting for {description}")
 

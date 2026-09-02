@@ -27,7 +27,13 @@ For a new release:
 4. Confirm the default branch contains the verified manifest and installer. After approval, add the `herdr-plugin` repository topic. The repository must be public, non-fork, and not archived.
 5. Check the repository, root manifest path, and version in the [official index](https://assets.herdr.dev/plugins/index.json) and [Marketplace](https://herdr.dev/plugins/) after its 30-minute refresh. See the [listing requirements](https://herdr.dev/docs/marketplace/).
 
-Installation from `main` can fail between merging a version bump and publishing its assets. The installer reports the missing asset and preserves an existing binary; it never substitutes another version. During this window, select the previous published plugin revision with `herdr plugin install j0urneyk/herdrctx --ref <previous-plugin-tag-or-commit>`. Only revisions containing both plugin files work. In particular, the original `v0.0.2` tag predates those files; use the first published plugin commit as the initial fallback revision and record its SHA when it is pushed.
+Installation from `main` can fail between merging a version bump and publishing its assets. The installer reports the missing asset and preserves an existing binary; it never substitutes another version. During this window, select the previous published plugin revision with `herdr plugin install j0urneyk/herdrctx --ref <previous-plugin-tag-or-commit>`. Only revisions containing both plugin files work. The original `v0.0.2` tag predates those files; the initial plugin revision below can be used as a fallback.
+
+The initial plugin revision is [`b2c0833`](https://github.com/j0urneyk/herdrctx/commit/b2c0833d19b6be2ffd137304ca3f145284d81785), which installs binary version 0.0.2:
+
+```sh
+herdr plugin install j0urneyk/herdrctx --ref b2c0833d19b6be2ffd137304ca3f145284d81785
+```
 
 The manifest version describes the installed binary, so an installer-only change may keep that version. Any new binary release tag must match the manifest. Herdr uninstallation removes its managed checkout, while the binary installed in `HERDRCTX_INSTALL_DIR` (default `~/.local/bin`) remains until the user removes it.
 
