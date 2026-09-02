@@ -100,10 +100,10 @@ def run(args):
 
             # Both signals must block attach and both create shortcuts before launching Herdr.
             for signal in ({"HERDR_ENV": "1"}, {"HERDR_SOCKET_PATH": sessions()[0]["socket_path"]}):
-                for key, title in ((b"a", "Cannot attach from inside Herdr"),
-                                   (b"n", "Cannot create from inside Herdr"),
-                                   (b"N", "Cannot create from inside Herdr")):
-                    with (artifacts / f"nested-{next(iter(signal))}-{key.decode()}.log").open("wb") as log:
+                for key, label, title in ((b"a", "attach", "Cannot attach from inside Herdr"),
+                                          (b"n", "create", "Cannot create from inside Herdr"),
+                                          (b"N", "create-directory", "Cannot create from inside Herdr")):
+                    with (artifacts / f"nested-{next(iter(signal))}-{label}.log").open("wb") as log:
                         terminal = Terminal([str(installed), "--herdr-bin", herdr],
                                             {**env, **signal}, root, log)
                         try:
