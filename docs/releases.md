@@ -17,7 +17,7 @@ After validation, GoReleaser runs with `release --clean` to build archives, writ
 
 ## Plugin versions and publication
 
-The root `herdr-plugin.toml` pins the binary version installed by `scripts/install.sh`. The first manifest uses the published `v0.0.2` assets. Herdr's plugin system started in [0.7.0](https://github.com/herdrdev/herdr/releases/tag/v0.7.0), which supports build commands and offline GitHub installation. The standalone CLI's minimum remains 0.6.5. On 0.7.0, local `plugin link` needs a running server; GitHub installation has its own offline registration path.
+The root `herdr-plugin.toml` pins the binary version installed by `scripts/install.sh`. Each binary release tag must match this version. Herdr's plugin system started in [0.7.0](https://github.com/herdrdev/herdr/releases/tag/v0.7.0), which supports build commands and offline GitHub installation. The standalone CLI's minimum remains 0.6.5. On 0.7.0, local `plugin link` needs a running server; GitHub installation has its own offline registration path.
 
 For a new release:
 
