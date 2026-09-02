@@ -1,0 +1,9 @@
+id = "herdrctx"
+name = "herdrctx"
+version = "0.0.2"
+min_herdr_version = "0.7.0"
+description = "Standalone terminal UI for managing local Herdr sessions"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["sh", "scripts/install.sh"]

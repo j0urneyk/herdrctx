@@ -126,15 +126,19 @@ def run(args):
     failed = False
     pane_pid = None
     try:
-        for directory in ("home", "config", "work", "tmp"):
+        for directory in ("config", "data", "state", "runtime", "work", "tmp"):
             (root / directory).mkdir()
+        shell = root / "test-shell"
+        shell.write_text("#!/bin/sh\nexport PS1='hctx-shell> '\nexec /bin/sh\n", encoding="utf-8")
+        shell.chmod(0o755)
         (root / "config/config.toml").write_text(
-            'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nnew_cwd = "current"\n'
+            f'onboarding = false\n[terminal]\ndefault_shell = "{shell}"\nnew_cwd = "current"\n'
             '[ui.sound]\nenabled = false\n', encoding="utf-8"
         )
         env = {
-            "PATH": "/usr/bin:/bin", "HOME": str(root / "home"),
-            "XDG_CONFIG_HOME": str(root / "home/.config"),
+            "PATH": "/usr/bin:/bin", "HOME": os.environ["HOME"],
+            "XDG_CONFIG_HOME": str(root / "config"), "XDG_DATA_HOME": str(root / "data"),
+            "XDG_STATE_HOME": str(root / "state"), "XDG_RUNTIME_DIR": str(root / "runtime"),
             "HERDR_CONFIG_PATH": str(root / "config/config.toml"),
             "TMPDIR": str(root / "tmp"), "TERM": "xterm-256color",
             "LANG": "en_US.UTF-8", "SHELL": "/bin/sh", "PS1": "hctx-shell> ",

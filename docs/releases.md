@@ -15,6 +15,22 @@ Validation runs tests, `go vet`, a build with `CGO_ENABLED=0`, binary version/he
 
 After validation, GoReleaser runs with `release --clean` to build archives, write checksums, create the GitHub Release, and upload artifacts. The release job then updates the source-built Homebrew formula in [`j0urneyk/homebrew-tap`](https://github.com/j0urneyk/homebrew-tap).
 
+## Plugin versions and publication
+
+The root `herdr-plugin.toml` pins the binary version installed by `scripts/install.sh`. The first manifest uses the published `v0.0.2` assets. Herdr's plugin system started in [0.7.0](https://github.com/herdrdev/herdr/releases/tag/v0.7.0), which supports build commands and offline GitHub installation. The standalone CLI's minimum remains 0.6.5. On 0.7.0, local `plugin link` needs a running server; GitHub installation has its own offline registration path.
+
+For a new release:
+
+1. Update the manifest's `version` alongside the release changes. Prepare and review the changes and validation results before committing, pushing, or publishing.
+2. Tag that commit as `v<manifest-version>` after approval. The release workflow checks this exact match before GoReleaser publishes anything. Normal CI uses local installer fixtures and never requires the new release assets to exist.
+3. Verify all four archives and `checksums.txt` in the published release, then run the isolated [public plugin installation check](testing.md#plugin-installation).
+4. Confirm the default branch contains the verified manifest and installer. After approval, add the `herdr-plugin` repository topic. The repository must be public, non-fork, and not archived.
+5. Check the repository, root manifest path, and version in the [official index](https://assets.herdr.dev/plugins/index.json) and [Marketplace](https://herdr.dev/plugins/) after its 30-minute refresh. See the [listing requirements](https://herdr.dev/docs/marketplace/).
+
+Installation from `main` can fail between merging a version bump and publishing its assets. The installer reports the missing asset and preserves an existing binary; it never substitutes another version. During this window, select the previous published plugin revision with `herdr plugin install j0urneyk/herdrctx --ref <previous-plugin-tag-or-commit>`. Only revisions containing both plugin files work. In particular, the original `v0.0.2` tag predates those files; use the first published plugin commit as the initial fallback revision and record its SHA when it is pushed.
+
+The manifest version describes the installed binary, so an installer-only change may keep that version. Any new binary release tag must match the manifest. Herdr uninstallation removes its managed checkout, while the binary installed in `HERDRCTX_INSTALL_DIR` (default `~/.local/bin`) remains until the user removes it.
+
 ## Target matrix
 
 `herdrctx` follows the same OS and architecture families Herdr supports:

@@ -22,6 +22,24 @@ Go 1.26.3으로 소스에서 설치할 수도 있습니다.
 go install github.com/j0urneyk/herdrctx/cmd/herdrctx@latest
 ```
 
+### Herdr 플러그인
+
+Herdr 0.7.0 이상에서는 [플러그인 관리자](https://herdr.dev/docs/plugins/)로 릴리스 바이너리를 설치할 수 있습니다. `git`, `curl`, `tar`, `sha256sum` 또는 `shasum`이 필요하며 Go는 필요하지 않습니다.
+
+```sh
+herdr plugin install j0urneyk/herdrctx
+export PATH="$HOME/.local/bin:$PATH"
+herdrctx
+```
+
+설치 후 **Herdr 밖의 터미널에서 `herdrctx`를 실행**하세요. 플러그인은 검색과 설치를 제공하며, 세션 내부 pane이나 action을 추가하지 않습니다. 설치할 때 Herdr 서버를 실행할 필요는 없습니다. CLI 자체는 계속 Herdr 0.6.5 이상을 지원합니다.
+
+설치기는 선택한 checkout의 `herdr-plugin.toml`에 적힌 버전을 SHA-256으로 검증해 `~/.local/bin/herdrctx`에 설치합니다. 다른 위치는 `HERDRCTX_INSTALL_DIR=/your/bin herdr plugin install j0urneyk/herdrctx`로 지정하고, 해당 디렉터리를 shell의 PATH에 추가하세요. Homebrew나 Go로도 설치했다면 `command -v herdrctx`로 실행 경로를 확인하세요. 설치기는 shell 설정을 수정하지 않습니다.
+
+같은 설치 명령을 다시 실행하면 선택한 manifest 버전으로 바이너리를 교체합니다. 특정 revision은 `herdr plugin install j0urneyk/herdrctx --ref <tag-or-commit>`으로 지정합니다. 해당 revision에는 manifest와 설치기가 있어야 하고, 바이너리 릴리스도 공개되어 있어야 합니다. 기존 `v0.0.2` 태그에는 플러그인 파일이 없어 `--ref`로 사용할 수 없습니다. 첫 manifest는 해당 버전의 바이너리만 재사용합니다.
+
+`herdr plugin uninstall herdrctx`는 관리되는 checkout과 등록 정보를 제거합니다. 설치한 바이너리는 남으므로, 기본 경로라면 `rm "$HOME/.local/bin/herdrctx"`로 직접 제거하세요. `HERDRCTX_INSTALL_DIR`을 지정했다면 해당 디렉터리의 `herdrctx`를 제거하세요.
+
 ## 사용법
 
 ```sh

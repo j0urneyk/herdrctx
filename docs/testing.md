@@ -51,7 +51,7 @@ The test drives `herdrctx` in a 160×40 PTY with `TERM=xterm-256color`:
 
 Session state comes from `herdr session list --json`. All UI and shell input travels through the PTY. Shell commands use bracketed paste, and the test waits for the complete command to reach the shell before pressing Enter. UI output confirms handoff and return; `herdr pane read` checks fresh shell markers and preserved output after reattach. Reading pane text handles Herdr's incremental screen rendering without reconstructing a terminal screen. Checks wait for observed conditions with deadlines, without automatic retries or full-screen snapshots.
 
-Every run uses a new directory under `/tmp`. Only child processes receive the isolated `HOME`, XDG path, `HERDR_CONFIG_PATH`, shell, and temporary directory. The test verifies that session and socket paths remain inside that directory. Success and failure both close the TUI, stop and delete the test's session if it remains, check shell termination, and remove temporary files. Host Herdr environment variables, credentials, shell startup files, and existing sessions are not inherited.
+Every run uses a new directory under `/tmp`. Child processes inherit the real `HOME`; Herdr storage is isolated with XDG config/data/state/runtime paths, `HERDR_CONFIG_PATH`, and a temporary directory. A test shell wrapper starts `/bin/sh` without login arguments or an `ENV` startup file. The test verifies that session and socket paths remain inside that directory. Success and failure both close the TUI, stop and delete the test's session if it remains, check shell termination, and remove temporary files. Host Herdr environment variables and credential environment variables are not inherited.
 
 To check the failure path, this command deliberately exits with an error after the first shell marker:
 
@@ -60,6 +60,30 @@ python3 scripts/test-herdr-integration.py --fail-after-attach --artifacts dist/i
 ```
 
 Verify that `failure.txt` reports the injected failure and `cleanup.json` confirms cleanup. A timeout or unexpected error is a test failure, even when cleanup succeeds.
+
+## Plugin installation
+
+The native CI matrix also runs these checks:
+
+```sh
+python3 scripts/test-plugin-install.py
+bash scripts/install-test-plugin-herdr.sh
+python3 scripts/test-plugin-herdr.py --herdr bin/herdr-plugin-ci --start-server
+```
+
+The installer tests use local tar/checksum fixtures and temporary command shims for `curl` and `uname`. They cover all four asset names, pinned versions, reinstall and version replacement, invalid manifests, download/checksum/extraction failures, preserved existing binaries, unsupported platforms, directory permissions, and PATH guidance. Each native runner packages its built `bin/herdrctx` into a fixture, installs it, and checks `--version` and `--help`. This does not depend on unpublished release assets. Tests inherit `HOME` and isolate installation with `HERDRCTX_INSTALL_DIR`.
+
+The second installer downloads a digest-pinned Herdr 0.7.0 binary to `bin/herdr-plugin-ci`. The registration test uses fresh XDG directories, verifies session/socket paths, links the build-only manifest, checks that `link` did not run the installer, exercises the CLI and both nested-context signals through a PTY, and uninstalls the plugin. Both create shortcuts and attach must open warning dialogs. The binary must remain after uninstallation. Herdr 0.7.0 requires a server for local `link`; `--start-server` starts and stops only this isolated server. Newer Herdr versions that support offline linking can run the check without this option. Logs go to `dist/integration/plugin-*`.
+
+After the plugin files are pushed, verify the **public GitHub install** separately:
+
+```sh
+python3 scripts/test-plugin-herdr.py --herdr bin/herdr-plugin-ci --source-ref <published-tag-or-commit>
+```
+
+This mode starts without a server, calls `herdr plugin install j0urneyk/herdrctx --ref <ref> --yes`, checks the installed version against the selected manifest, and verifies that uninstall removes the managed checkout while retaining the binary. It runs the published build script, so review that revision first. The original `v0.0.2` tag has no plugin files and cannot be used for this check.
+
+For a downloaded release binary, pass `--binary /absolute/path/to/herdrctx` to the local registration and lifecycle checks. Fixture, local-link, and public-install results cover different steps; only a public-install result proves GitHub distribution works.
 
 ## Results
 
