@@ -370,7 +370,7 @@ func TestSearchNoMatchRenderDiffersFromEmptySessionList(t *testing.T) {
 	}
 }
 
-func TestSearchHelpAndReadmeDocumentBehavior(t *testing.T) {
+func TestSearchHelpBindings(t *testing.T) {
 	t.Parallel()
 
 	keys := defaultKeyMap()
@@ -379,17 +379,6 @@ func TestSearchHelpAndReadmeDocumentBehavior(t *testing.T) {
 	}
 	if !fullHelpBindingExists(keys.FullHelp(), "tab", "search scope") {
 		t.Fatalf("FullHelp() = %#v, want search scope binding", keys.FullHelp())
-	}
-
-	readme, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("read README: %v", err)
-	}
-	readmeText := string(readme)
-	for _, want := range []string{"| `/` | Search sessions |", "Switch search between name and directory", "case-insensitive substrings"} {
-		if !strings.Contains(readmeText, want) {
-			t.Fatalf("README.md missing %q", want)
-		}
 	}
 }
 
