@@ -33,6 +33,22 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Check plugin release version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("herdr-plugin.toml").read_text())["version"]
+          tag = os.environ["TAG_NAME"]
+          if tag != f"v{version}":
+              raise SystemExit(f"Release tag {tag!r} must match manifest version v{version}.")
+          print(f"Plugin manifest matches {tag}.")
+          PY
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
