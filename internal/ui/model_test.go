@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1631,6 +1632,9 @@ func fakeHerdrCommand(t *testing.T, body string) string {
 
 	path := filepath.Join(t.TempDir(), "herdr")
 	content := "#!/bin/sh\n" + body + "\n"
+	// Forks wait until the executable's writable descriptor is closed.
+	syscall.ForkLock.RLock()
+	defer syscall.ForkLock.RUnlock()
 	// #nosec G306 -- The fake Herdr command must be executable for the test.
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatalf("write fake herdr: %v", err)
