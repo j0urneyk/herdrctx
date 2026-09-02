@@ -210,8 +210,10 @@ def run(args):
                     start = len(terminal.output)
                     # The expected marker is absent from the typed command's echo.
                     command = ("printf '%s\\n' \"$$\" > pane.pid; "
-                               f"printf '%s%s\\n' '{marker[:12]}' '{marker[12:]}'\r")
-                    terminal.send(command.encode())
+                               f"printf '%s%s\\n' '{marker[:12]}' '{marker[12:]}'")
+                    terminal.send(b"\x1b[200~" + command.encode() + b"\x1b[201~")
+                    terminal.wait("complete pasted shell command", lambda: shell_contains(command))
+                    terminal.send(b"\r")
                     terminal.wait("shell output " + marker, lambda: shell_contains(marker))
                     terminal.wait("shell PID", lambda: (root / "work/pane.pid").exists())
                     current_pid = int((root / "work/pane.pid").read_text().strip())

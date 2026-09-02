@@ -49,7 +49,7 @@ The test drives `herdrctx` in a 160×40 PTY with `TERM=xterm-256color`:
 5. Detach again, stop with confirmation, verify the shell has exited, and delete with confirmation. Check the session still exists before each confirmation.
 6. Quit `herdrctx` normally.
 
-Session state comes from `herdr session list --json`. All UI and shell input travels through the PTY. UI output confirms handoff and return; `herdr pane read` checks fresh shell markers and preserved output after reattach. Reading pane text handles Herdr's incremental screen rendering without reconstructing a terminal screen. Checks wait for observed conditions with deadlines, without automatic retries or full-screen snapshots.
+Session state comes from `herdr session list --json`. All UI and shell input travels through the PTY. Shell commands use bracketed paste, and the test waits for the complete command to reach the shell before pressing Enter. UI output confirms handoff and return; `herdr pane read` checks fresh shell markers and preserved output after reattach. Reading pane text handles Herdr's incremental screen rendering without reconstructing a terminal screen. Checks wait for observed conditions with deadlines, without automatic retries or full-screen snapshots.
 
 Every run uses a new directory under `/tmp`. Only child processes receive the isolated `HOME`, XDG path, `HERDR_CONFIG_PATH`, shell, and temporary directory. The test verifies that session and socket paths remain inside that directory. Success and failure both close the TUI, stop and delete the test's session if it remains, check shell termination, and remove temporary files. Host Herdr environment variables, credentials, shell startup files, and existing sessions are not inherited.
 
