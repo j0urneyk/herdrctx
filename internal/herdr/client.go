@@ -143,15 +143,9 @@ func (c *Client) AttachCommand(name string) (*exec.Cmd, error) {
 
 // CreateAttachCommand returns the foreground command that uses or creates a named session.
 func (c *Client) CreateAttachCommand(name string, startDir string) (*exec.Cmd, error) {
-	name, err := ValidateSessionName(name)
+	name, err := ValidateNewSessionName(name)
 	if err != nil {
 		return nil, err
-	}
-	if IsAttachHelpName(name) {
-		return nil, fmt.Errorf("session name %q cannot be attached by Herdr", name)
-	}
-	if IsJSONFlagName(name) {
-		return nil, fmt.Errorf("session name %q cannot be stopped or deleted by Herdr", name)
 	}
 
 	startDir, err = ResolveStartDir(startDir, "")

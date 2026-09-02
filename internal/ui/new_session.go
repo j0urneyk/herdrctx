@@ -204,18 +204,10 @@ func (f *newSessionForm) acceptCompletion() bool {
 }
 
 func (f *newSessionForm) submit() (newSessionSubmit, error) {
-	name, err := herdr.ValidateSessionName(f.name.Value())
+	name, err := herdr.ValidateNewSessionName(f.name.Value())
 	if err != nil {
 		f.active = newSessionNameField
 		return newSessionSubmit{}, err
-	}
-	if herdr.IsAttachHelpName(name) {
-		f.active = newSessionNameField
-		return newSessionSubmit{}, fmt.Errorf("session name %q cannot be attached by Herdr", name)
-	}
-	if herdr.IsJSONFlagName(name) {
-		f.active = newSessionNameField
-		return newSessionSubmit{}, fmt.Errorf("session name %q cannot be stopped or deleted by Herdr", name)
 	}
 
 	dirInput := f.defaultDir

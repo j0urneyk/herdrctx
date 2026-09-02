@@ -53,6 +53,8 @@ Press `/` and type part of a session name to filter the list. While searching, `
 
 When creating a session with `N`, you must enter a directory. Missing directories are created for you. Use `↑` / `↓` to move between fields or browse directory suggestions, and `tab` to accept a suggestion. `esc` closes the suggestions first; press it again to cancel the form.
 
+New session names must be 1–64 characters, start with an ASCII letter or number, and contain only ASCII letters, numbers, `-`, `_`, or `.`. For example, `my-project`, `work_1`, and `v1.2` are valid. The name `help` is reserved. Existing sessions remain visible even if their names do not meet the creation rules.
+
 ### Stopping and deleting sessions
 
 **Stopping a session can end the shells, servers, and other processes running inside it.** Both stopping and deleting ask for confirmation.
