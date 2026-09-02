@@ -82,6 +82,27 @@ jobs:
           printf '%s\n' "$help_output" | grep -Fq 'Usage: herdrctx [flags]'
           printf '%s\n' "$help_output" | grep -Fq -- '-herdr-bin'
 
+      - name: Install Herdr 0.6.5
+        run: |
+          mkdir -p dist/integration
+          uname -a > dist/integration/host.txt
+          python3 --version >> dist/integration/host.txt
+          bash scripts/install-test-herdr.sh 2>&1 | tee dist/integration/install.log
+
+      - name: Test real Herdr lifecycle
+        timeout-minutes: 5
+        run: python3 scripts/test-herdr-integration.py
+
+      - name: Preserve integration failure logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: herdr-integration-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/integration/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
   lint:
     name: Format and lint (Linux x86_64)
     runs-on: ubuntu-24.04

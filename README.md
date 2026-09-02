@@ -8,6 +8,8 @@
 
 You'll need Herdr 0.6.5 or newer available as `herdr` on your `PATH`. `herdrctx` supports macOS and Linux on x86_64 and arm64.
 
+CI covers Ubuntu 24.04 and macOS 15 on both architectures. See the [testing guide](docs/testing.md) for the checks and their scope.
+
 Install with Homebrew:
 
 ```sh

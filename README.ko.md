@@ -8,6 +8,8 @@
 
 Herdr 0.6.5 이상이 필요하며, `PATH`에 등록되어 터미널에서 `herdr`를 실행할 수 있어야 합니다. `herdrctx`는 macOS와 Linux의 x86_64, arm64 환경을 지원합니다.
 
+CI에서는 Ubuntu 24.04와 macOS 15의 두 아키텍처를 검증합니다. 검사 항목과 검증 범위는 [테스트 문서](docs/testing.md)를 참고하세요.
+
 Homebrew로 설치하려면:
 
 ```sh

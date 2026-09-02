@@ -11,7 +11,7 @@ git push origin v0.0.1
 
 When a `v*` tag is pushed, `.github/workflows/release.yml` calls the same `ci.yml` workflow used for pull requests and pushes to `main`. The local workflow reference validates the tagged commit with read-only permissions.
 
-Validation runs tests, `go vet`, a build with `CGO_ENABLED=0`, and binary version/help checks on Ubuntu 24.04 and macOS 15, each on x86_64 and arm64. Formatting and lint run once on Linux x86_64. Every validation job must succeed before publishing; a failure or cancellation blocks the release job. See the [testing guide](testing.md) for the runner matrix and validation scope.
+Validation runs tests, `go vet`, a build with `CGO_ENABLED=0`, binary version/help checks, and a real Herdr 0.6.5 session lifecycle test on Ubuntu 24.04 and macOS 15, each on x86_64 and arm64. Formatting and lint run once on Linux x86_64. Every validation job must succeed before publishing; a failure or cancellation, including an integration test failure, blocks the release job. See the [testing guide](testing.md) for the runner matrix and validation scope.
 
 After validation, GoReleaser runs with `release --clean` to build archives, write checksums, create the GitHub Release, and upload artifacts. The release job then updates the source-built Homebrew formula in [`j0urneyk/homebrew-tap`](https://github.com/j0urneyk/homebrew-tap).
 
