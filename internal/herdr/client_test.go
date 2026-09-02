@@ -145,19 +145,25 @@ func TestClientCreateAttachCommand(t *testing.T) {
 
 	client := NewClient("/usr/local/bin/herdr")
 	dir := t.TempDir()
-	cmd, err := client.CreateAttachCommand("work", dir)
-	if err != nil {
-		t.Fatalf("CreateAttachCommand() error = %v", err)
-	}
+	for _, name := range []string{"work", "A", "0", "work-1_2.3", strings.Repeat("a", 64)} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	if cmd.Path != "/usr/local/bin/herdr" {
-		t.Fatalf("Path = %q", cmd.Path)
-	}
-	if got := strings.Join(cmd.Args, " "); got != "/usr/local/bin/herdr --session work" {
-		t.Fatalf("Args = %q", got)
-	}
-	if cmd.Dir != dir {
-		t.Fatalf("Dir = %q", cmd.Dir)
+			cmd, err := client.CreateAttachCommand(name, dir)
+			if err != nil {
+				t.Fatalf("CreateAttachCommand() error = %v", err)
+			}
+
+			if cmd.Path != "/usr/local/bin/herdr" {
+				t.Fatalf("Path = %q", cmd.Path)
+			}
+			if got := strings.Join(cmd.Args, " "); got != "/usr/local/bin/herdr --session "+name {
+				t.Fatalf("Args = %q", got)
+			}
+			if cmd.Dir != dir {
+				t.Fatalf("Dir = %q", cmd.Dir)
+			}
+		})
 	}
 }
 
@@ -165,16 +171,14 @@ func TestClientCreateAttachCommandRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 
 	client := NewClient("/usr/local/bin/herdr")
-	if _, err := client.CreateAttachCommand("bad name", t.TempDir()); err == nil {
-		t.Fatal("CreateAttachCommand() error = nil, want invalid session name error")
-	}
-	for _, name := range []string{"help", "--help"} {
-		if _, err := client.CreateAttachCommand(name, t.TempDir()); err == nil {
-			t.Fatalf("CreateAttachCommand(%q) error = nil, want attachability error", name)
+	dir := t.TempDir()
+	for _, name := range []string{
+		"", "bad name", "work/1", "work;1", "한글", strings.Repeat("a", 65),
+		"-", "--", "-work", "--json", "--session", "--help", "-h", "_work", ".work", "help",
+	} {
+		if cmd, err := client.CreateAttachCommand(name, dir); err == nil || cmd != nil {
+			t.Fatalf("CreateAttachCommand(%q) = %v, %v; want nil command and validation error", name, cmd, err)
 		}
-	}
-	if _, err := client.CreateAttachCommand("--json", t.TempDir()); err == nil {
-		t.Fatal("CreateAttachCommand() error = nil, want manageability error")
 	}
 	if _, err := client.CreateAttachCommand("work", ""); err == nil {
 		t.Fatal("CreateAttachCommand() error = nil, want start directory error")

@@ -101,6 +101,23 @@ func IsJSONFlagName(name string) bool {
 	return name == "--json"
 }
 
+// ValidateNewSessionName applies the naming policy for session creation.
+func ValidateNewSessionName(name string) (string, error) {
+	name, err := ValidateSessionName(name)
+	if err != nil {
+		return "", err
+	}
+	switch name[0] {
+	case '.', '_', '-':
+		return "", fmt.Errorf("session name must start with an ASCII letter or number")
+	}
+	if name == "help" {
+		return "", fmt.Errorf("session name %q is reserved by Herdr", name)
+	}
+
+	return name, nil
+}
+
 // ValidateSessionName returns a session name or an error.
 func ValidateSessionName(name string) (string, error) {
 	if strings.TrimSpace(name) == "" {

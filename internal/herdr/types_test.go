@@ -57,15 +57,21 @@ func TestParseSessionsRejectsDuplicateSessionNames(t *testing.T) {
 	}
 }
 
-func TestParseSessionsAllowsLeadingHyphenNames(t *testing.T) {
+func TestParseSessionsAllowsNamesOutsideCreationPolicy(t *testing.T) {
 	t.Parallel()
 
-	sessions, err := ParseSessions([]byte(`{"sessions":[{"name":"-bad"},{"name":"--help"}]}`))
+	sessions, err := ParseSessions([]byte(`{"sessions":[{"name":"-work"},{"name":"--help"},{"name":"--json"},{"name":"--session"},{"name":"_work"},{"name":".work"},{"name":"help"}]}`))
 	if err != nil {
 		t.Fatalf("ParseSessions() error = %v", err)
 	}
-	if len(sessions) != 2 || sessions[0].Name != "-bad" || sessions[1].Name != "--help" {
-		t.Fatalf("sessions = %#v, want leading-hyphen names preserved", sessions)
+	names := []string{"-work", "--help", "--json", "--session", "_work", ".work", "help"}
+	if len(sessions) != len(names) {
+		t.Fatalf("sessions = %#v, want all existing sessions", sessions)
+	}
+	for i, name := range names {
+		if sessions[i].Name != name {
+			t.Fatalf("session name = %q, want %q", sessions[i].Name, name)
+		}
 	}
 }
 

@@ -767,45 +767,51 @@ func TestAttachHelpSessionNameIsBlocked(t *testing.T) {
 	}
 }
 
-func TestNewSessionRejectsAttachHelpName(t *testing.T) {
+func TestNewSessionRejectsInvalidNames(t *testing.T) {
 	t.Parallel()
 
-	m := NewModel(Options{DefaultDir: t.TempDir()}).(model)
-	updated, _ := m.openNewSession(newSessionQuick)
-	got := updated.(model)
-	got.newSession.name.SetValue("help")
+	for _, mode := range []newSessionMode{newSessionQuick, newSessionWithDir} {
+		for _, name := range []string{"-", "--", "-work", "--json", "--session", "--help", "-h", "_work", ".work", "help"} {
+			t.Run(fmt.Sprintf("%d/%s", mode, name), func(t *testing.T) {
+				t.Parallel()
 
-	updated, cmd := got.submitNewSession()
-	got = updated.(model)
-	if cmd == nil {
-		t.Fatal("submitNewSession() cmd = nil, want focus command")
-	}
-	if got.newSession == nil {
-		t.Fatal("newSession = nil, want form to remain open")
-	}
-	if !strings.Contains(got.newSession.err, "cannot be attached") {
-		t.Fatalf("form error = %q, want attachability error", got.newSession.err)
-	}
-}
+				dir := t.TempDir()
+				missingDir := filepath.Join(dir, "new-directory")
+				m := NewModel(Options{DefaultDir: dir}).(model)
+				updated, _ := m.openNewSession(mode)
+				got := updated.(model)
+				got.newSession.name.SetValue(name)
+				if mode == newSessionWithDir {
+					got.newSession.dir.SetValue(missingDir)
+					got.newSession.active = newSessionDirField
+				}
 
-func TestNewSessionRejectsJSONFlagName(t *testing.T) {
-	t.Parallel()
-
-	m := NewModel(Options{DefaultDir: t.TempDir()}).(model)
-	updated, _ := m.openNewSession(newSessionQuick)
-	got := updated.(model)
-	got.newSession.name.SetValue("--json")
-
-	updated, cmd := got.submitNewSession()
-	got = updated.(model)
-	if cmd == nil {
-		t.Fatal("submitNewSession() cmd = nil, want focus command")
-	}
-	if got.newSession == nil {
-		t.Fatal("newSession = nil, want form to remain open")
-	}
-	if !strings.Contains(got.newSession.err, "cannot be stopped or deleted") {
-		t.Fatalf("form error = %q, want manageability error", got.newSession.err)
+				updated, cmd := got.submitNewSession()
+				got = updated.(model)
+				if cmd == nil {
+					t.Fatal("submitNewSession() cmd = nil, want focus command")
+				}
+				if got.newSession == nil {
+					t.Fatal("newSession = nil, want form to remain open")
+				}
+				wantError := "must start with an ASCII letter or number"
+				if name == "help" {
+					wantError = "reserved by Herdr"
+				}
+				if !strings.Contains(got.newSession.err, wantError) {
+					t.Fatalf("form error = %q, want %q", got.newSession.err, wantError)
+				}
+				if got.newSession.active != newSessionNameField || got.newSession.name.Value() != name {
+					t.Fatal("want name input focused with the rejected name preserved")
+				}
+				if got.dialog != nil || got.busy != "" {
+					t.Fatal("want inline validation without a dialog or active command")
+				}
+				if _, err := os.Stat(missingDir); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("stat start directory = %v, want directory not created", err)
+				}
+			})
+		}
 	}
 }
 
