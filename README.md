@@ -36,7 +36,7 @@ Run `herdrctx` **from a terminal outside Herdr**. The plugin provides installati
 
 The installer checks SHA-256 and installs the version in the selected checkout's `herdr-plugin.toml` to `~/.local/bin/herdrctx`. Use `HERDRCTX_INSTALL_DIR=/your/bin herdr plugin install j0urneyk/herdrctx` for another directory, and add it to your shell's PATH. Check `command -v herdrctx` if you also installed it through Homebrew or Go. The installer does not edit shell settings.
 
-Run the install command again to replace the binary with the selected manifest version. To select a revision, use `herdr plugin install j0urneyk/herdrctx --ref <tag-or-commit>`. That revision must contain the manifest and installer, and its binary release must be published. The existing `v0.0.2` tag predates the plugin files and cannot be used as a plugin `--ref`, even though the initial manifest installs that binary version.
+Run the install command again to replace the binary with the selected manifest version. To select a revision, use `herdr plugin install j0urneyk/herdrctx --ref <tag-or-commit>`. That revision must contain the manifest and installer, and its binary release must be published. The `v0.0.2` tag predates the plugin files and cannot be used as a plugin `--ref`.
 
 `herdr plugin uninstall herdrctx` removes the managed checkout and registration. The installed binary remains; remove `~/.local/bin/herdrctx` yourself with `rm "$HOME/.local/bin/herdrctx"`, or remove `herdrctx` from the directory you chose with `HERDRCTX_INSTALL_DIR`.
 
