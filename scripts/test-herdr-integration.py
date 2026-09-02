@@ -194,15 +194,25 @@ def run(args):
                 # Herdr starts a new session empty; its normal shortcut opens a shell workspace.
                 terminal.send(b"\x02N")
                 terminal.expect("hctx-shell>", start)
+                panes = json.loads(cli("--session", name, "pane", "list"))["result"]["panes"]
+                if len(panes) != 1:
+                    raise AssertionError(f"Expected one shell pane, got {len(panes)}")
+                pane_id = panes[0]["pane_id"]
+
+                def shell_contains(marker):
+                    output = cli("--session", name, "pane", "read", pane_id,
+                                 "--source", "recent-unwrapped", "--lines", "100", "--format", "text")
+                    (artifacts / "pane.txt").write_text(output, encoding="utf-8")
+                    return marker in output
 
                 for visit in (1, 2):
                     marker = f"HCTX_{uuid.uuid4().hex}"
                     start = len(terminal.output)
                     # The expected marker is absent from the typed command's echo.
-                    command = (f"printf '%s\\n' \"$$\" > '{root}/work/pane.pid'; "
+                    command = ("printf '%s\\n' \"$$\" > pane.pid; "
                                f"printf '%s%s\\n' '{marker[:12]}' '{marker[12:]}'\r")
                     terminal.send(command.encode())
-                    terminal.expect(marker, start)
+                    terminal.wait("shell output " + marker, lambda: shell_contains(marker))
                     terminal.wait("shell PID", lambda: (root / "work/pane.pid").exists())
                     current_pid = int((root / "work/pane.pid").read_text().strip())
                     if pane_pid is not None and current_pid != pane_pid:
@@ -220,7 +230,8 @@ def run(args):
                         terminal.send(b"/" + name.encode() + b"\r")
                         terminal.expect(name, start)
                         terminal.send(b"\r")
-                        terminal.expect(marker, start)
+                        terminal.expect("hctx-shell>", start)
+                        terminal.wait("preserved shell output", lambda: shell_contains(marker))
 
                 start = len(terminal.output)
                 terminal.send(b"s")
@@ -267,6 +278,9 @@ def run(args):
                     print(f"Could not copy all diagnostic files: {error}", file=sys.stderr)
             if "sessions" in locals():
                 # The CLI environment and session paths were verified as test-owned.
+                pid_file = root / "work/pane.pid"
+                if pane_pid is None and pid_file.exists():
+                    pane_pid = int(pid_file.read_text().strip())
                 state = session_state()
                 if state is not None:
                     if state["running"]:
