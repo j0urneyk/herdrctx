@@ -1,6 +1,26 @@
 # Testing
 
-Use Go 1.26.3 from `go.mod`. CI uses golangci-lint 2.12.0 for formatting and lint.
+Use the Go version specified in `go.mod`, also recorded in `.tool-versions`. CI uses golangci-lint 2.12.0 for formatting and lint.
+
+## Choosing checks
+
+Select checks for each affected area; changes spanning areas need the corresponding checks from each row.
+
+| Changed area | Local verification |
+| --- | --- |
+| Go source, dependencies, or build configuration | Run the four baseline Go checks below. |
+| Session creation, attach/detach, stop, or delete | Run the baseline Go checks and the [real Herdr lifecycle test](#real-herdr-lifecycle). |
+| Plugin installer or manifest | Build the current binary and run the [plugin installer tests](#plugin-installation). For registration or nested-guard changes, also run the local Herdr plugin registration test. |
+| Release packaging or workflow | Run the baseline Go checks, review affected CI checks, and follow the [release guide](releases.md), including a snapshot build for packaging changes. Local checks do not establish that remote CI passed. |
+| Documentation only | Review accuracy and local links; keep user-visible behavior aligned in both READMEs. No Go suite is required unless code or build configuration also changed. |
+
+For nested attach/create guard changes, include the local plugin registration test even when no plugin files changed; it exercises both Herdr environment signals and both create shortcuts.
+
+Public GitHub installation is a separate post-publication check described below. Local fixture and registration tests can run before a release exists.
+
+## Baseline Go checks
+
+Run these commands from the repository root:
 
 ```sh
 go test ./...
