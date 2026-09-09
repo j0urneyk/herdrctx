@@ -10,9 +10,10 @@ const maxSessionNameBytes = 64
 
 // Session is one entry from `herdr session list --json`.
 type Session struct {
-	Default    bool   `json:"default"`
-	Name       string `json:"name"`
-	Running    bool   `json:"running"`
+	Default bool   `json:"default"`
+	Name    string `json:"name"`
+	Running bool   `json:"running"`
+	// SessionDir is Herdr state storage, not the working directory supplied at creation.
 	SessionDir string `json:"session_dir"`
 	SocketPath string `json:"socket_path"`
 }

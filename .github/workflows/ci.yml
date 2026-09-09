@@ -67,10 +67,11 @@ jobs:
         run: go test ./...
 
       - name: Vet
-        run: go vet ./...
+        run: make vet
 
-      - name: Build
-        run: CGO_ENABLED=0 go build -o bin/herdrctx ./cmd/herdrctx
+      - name: Test integration
+        timeout-minutes: 10
+        run: CGO_ENABLED=0 make test-integration
 
       - name: Check binary version and help
         run: |
@@ -81,27 +82,6 @@ jobs:
           printf '%s\n' "$help_output"
           printf '%s\n' "$help_output" | grep -Fq 'Usage: herdrctx [flags]'
           printf '%s\n' "$help_output" | grep -Fq -- '-herdr-bin'
-
-      - name: Test plugin installer
-        run: python3 scripts/test-plugin-install.py
-
-      - name: Install Herdr 0.6.5
-        run: |
-          mkdir -p dist/integration
-          uname -a > dist/integration/host.txt
-          python3 --version >> dist/integration/host.txt
-          bash scripts/install-test-herdr.sh 2>&1 | tee dist/integration/install.log
-
-      - name: Test real Herdr lifecycle
-        timeout-minutes: 5
-        run: python3 scripts/test-herdr-integration.py
-
-      - name: Install Herdr 0.7.0 for plugin checks
-        run: bash scripts/install-test-plugin-herdr.sh
-
-      - name: Test plugin registration and nested guards
-        timeout-minutes: 2
-        run: python3 scripts/test-plugin-herdr.py --herdr bin/herdr-plugin-ci --start-server
 
       - name: Preserve integration failure logs
         if: failure()

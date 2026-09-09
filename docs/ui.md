@@ -10,11 +10,38 @@ Keep the previous list on refresh failure and put the error in the status line. 
 
 Search filters the displayed list by a case-insensitive substring of the session name or Herdr's `session_dir` field. The **Directory** column and directory search use that session-state path, not the working directory entered when creating a session. Opening search with `/` starts editing; `tab` switches scope without clearing the query, `enter` keeps the filter, and `esc` clears it. Filters survive refreshes, and actions target the selected filtered row. Distinguish an empty session list from a filter with no matches.
 
+## Filters, favorites, and details
+
+`f` cycles `All`, `Running`, and `Stopped`; `o` switches `Name` and `Running first`. Defaults are `All` and `Name`. These conditions survive refresh and terminal handoff but are not persisted. Apply status and existing search filters before sorting favorites first, then the chosen order within each group. Name comparisons ignore case with raw names as the tie-breaker. Never mutate the raw list. Show conditions and visible/total counts above the table. Search dismissal clears only search text.
+
+`p` toggles the selected exact name in saved favorites. Render `⭐` with emoji presentation selector U+FE0F (terminal/font support determines its appearance), separately from the default `*`, and move the row only after a successful save. Preserve selection by raw name. Missing or deleted sessions retain their favorite records without appearing as synthetic rows; a same-name replacement inherits the favorite.
+
+`i` opens a read-only detail overlay containing the name, status, default/favorite flags, session-state directory, and socket path. Empty paths show `Not available`. Wrap full values in a scrolling viewport and sanitize external display text. `↑/↓` and `PgUp/PgDn` scroll; `enter`, `esc`, or `q` closes the overlay. Keep the target name fixed, update it on successful refresh, and retain last-known values with a notice on disappearance or refresh failure. Details do not add session actions or infer a project working directory.
+
+## Saved preferences
+
+The CLI resolves `os.UserConfigDir()` and injects a store at `herdrctx/preferences.json` beneath it. Failure to resolve that directory follows the startup preference-error policy below. Tests inject a temporary path or isolate both `HOME` and XDG directories. The JSON format is:
+
+```json
+{
+  "version": 1,
+  "favorites": ["api"]
+}
+```
+
+A missing file is empty preferences. An unreadable or invalid file, unknown field/version, or invalid record at startup produces one warning and disables preference operations for that run while keeping session management available. Never overwrite the file to recover silently. Successful actions update the model only after IO completes; failures preserve previous values and use an error dialog.
+
+Create directories with `0700`, files with `0600`. Acquire a nonblocking advisory lock on `preferences.json.lock`, reload current data, and apply only the requested item change. Write to a temporary file in the same directory, sync, close, and rename. Clean temporary files on failure. Closing the lock descriptor releases the lock; keep the lock file so cooperating instances use the same inode. Manual JSON editing requires closing the app, as external editors do not participate in its lock.
+
+Run storage IO in `tea.Cmd` and ignore stale result IDs. While IO is pending, prevent overlapping preference changes and new Herdr actions, allow root details/movement/help/quit. Continuous external change watching is outside this feature. Session refreshes only update Herdr session data: they must not prune favorite names.
+
 ## Attach and create
 
 Keep Herdr as the external CLI boundary. Attach uses `herdr session attach <name>`. Creation uses `herdr --session <name>` with the child process's working directory set to the selected start directory. Both use Bubble Tea's `tea.ExecProcess` to hand the terminal to Herdr immediately. The TUI resumes after Herdr returns, normally when the user detaches, and refreshes the session list. Do not replace this with background creation or a second attach step. Herdr owns whether the named session is created or an existing one is reused.
 
-Block attach and both creation shortcuts before launching Herdr when `HERDR_ENV=1` or a nonempty `HERDR_SOCKET_PATH` identifies a nested context. The supported opt-ins are `--allow-nested` and `HERDRCTX_ALLOW_NESTED=1`; Herdr also needs its own [`experimental.allow_nested`](https://herdr.dev/docs/config-reference/#experimental) setting. Show a warning dialog when blocked, including when attaching to the session that already contains the TUI. This guard does not disable list, stop, or delete actions.
+Session-list `enter` / `a` blocks stopped sessions by default with a warning explaining restart semantics and the `--allow-stopped-attach` / `HERDRCTX_ALLOW_STOPPED_ATTACH=1` opt-in. An explicit `--allow-stopped-attach=false` overrides the environment. With the opt-in, attach immediately without confirmation. Show `attach disabled` for a selected stopped session by default, `start and attach` when enabled, and `attach` for running sessions in both short and expanded help. Derive this from the selected session on each render. Keep the nested guard first and independent. Creation retains its existing create/reuse behavior, even for stopped names. This policy uses the latest loaded session status, not an atomic Herdr-side no-start guarantee.
+
+Block attach and both creation shortcuts before launching Herdr when `HERDR_ENV=1` or a nonempty `HERDR_SOCKET_PATH` identifies a nested context. The supported opt-ins are `--allow-nested` and `HERDRCTX_ALLOW_NESTED=1`; Herdr also needs its own [`experimental.allow_nested`](https://herdr.dev/docs/config-reference/#experimental) setting. Show a warning dialog when blocked, including when attaching to the session that already contains the TUI. This guard does not disable list, stop, delete, or favorites.
 
 ### Creation forms
 
@@ -54,7 +81,9 @@ Choose feedback by the operation that failed:
 | --- | --- |
 | A user action is blocked: nested attach/create, no selection, unavailable target, already-stopped session, protected delete, or an action-specific name restriction | Warning dialog |
 | Attach/create fails after handoff, or a confirmed stop/delete action fails, including its delete preflight | Error dialog |
-| Initial list load, automatic refresh, or manual refresh fails | Status line |
+| Initial list load, automatic refresh, or manual refresh fails | Status line; an open detail overlay also shows a last-known-data notice |
+| Preferences cannot be read at startup | One warning dialog; disable preference operations for that run |
+| A favorite save fails | Error dialog; retain the last valid preferences |
 | Name or directory validation fails while creating a session | Creation form, with the relevant field focused |
 | Loading, action progress, successful completion, or return from Herdr | Status or summary line |
 
@@ -66,6 +95,8 @@ Route `ctrl+c` first so it quits from every TUI layer and cancels the model's co
 | --- | --- |
 | Alert dialog | `enter`, `esc`, or `q` closes it. Consume all other keys; do not send them to a form, confirmation, or table. |
 | Directory suggestions inside a creation form | Handle completion keys before the parent form. Pass ordinary text and `enter` to the form. |
+| Session details | Scroll and close only; no background input. |
+| Pending preferences IO | Block new mutations and session actions, allowing root details/movement/help/quit. |
 | Creation form | `enter` submits and `esc` cancels after any suggestions close. Printable keys such as `q` are input, not global shortcuts. |
 | Search field | Handle search keys and text only; `q` is search input. |
 | Stop/delete confirmation | `y` / `enter` confirms, `n` / `esc` cancels, and `q` quits the app. Other keys do not reach the table. |
@@ -78,4 +109,6 @@ Render alerts, confirmations, and creation forms as overlays with the session li
 
 [model.go](../internal/ui/model.go) owns action state, refresh messages, and overlays; [input_layer.go](../internal/ui/input_layer.go) and [keymap.go](../internal/ui/keymap.go) own keyboard routing. Forms and suggestions live in [new_session.go](../internal/ui/new_session.go) and [path_completion.go](../internal/ui/path_completion.go). The [Herdr client](../internal/herdr/client.go), [name validation](../internal/herdr/types.go), [directory validation](../internal/herdr/path.go), and [environment detection](../internal/herdr/env.go) define the integration boundary.
 
-Extend the relevant cases in [model_test.go](../internal/ui/model_test.go), [path_completion_test.go](../internal/ui/path_completion_test.go), and the Herdr package tests when behavior changes. Check blocked actions, cancellation, stale session state, and input isolation as well as successful actions. Use [Choosing checks](testing.md#choosing-checks) for the required commands; the real lifecycle test does not cover every form, alert, or terminal layout.
+Navigation lives in [session_view.go](../internal/ui/session_view.go) and [session_details.go](../internal/ui/session_details.go). [preferences.go](../internal/ui/preferences.go) connects asynchronous favorite storage to the UI. The [preferences store](../internal/preferences/store.go) owns persistence and preserves other instances' favorite changes.
+
+Extend the relevant cases in [model_test.go](../internal/ui/model_test.go), [navigation_test.go](../internal/ui/navigation_test.go), [path_completion_test.go](../internal/ui/path_completion_test.go), and the Herdr and preferences package tests when behavior changes. Check blocked actions, cancellation, stale session state, and input isolation as well as successful actions. Use [Choosing checks](testing.md#choosing-checks) for the required commands; the [navigation PTY test](testing.md#navigation-through-a-pty) adds keyboard, persistence, and refresh scenarios against a fake CLI, while the real lifecycle test verifies Herdr handoff and shell persistence. Neither reconstructs every terminal layout.

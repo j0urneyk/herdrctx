@@ -109,21 +109,6 @@ func (s sessionSearch) view() string {
 	return input.View()
 }
 
-func filterSessionsBySearch(sessions []herdr.Session, search sessionSearch) []herdr.Session {
-	if !search.hasQuery() {
-		return sessions
-	}
-
-	filtered := make([]herdr.Session, 0, len(sessions))
-	for _, session := range sessions {
-		if sessionMatchesSearch(session, search) {
-			filtered = append(filtered, session)
-		}
-	}
-
-	return filtered
-}
-
 func sessionMatchesSearch(session herdr.Session, search sessionSearch) bool {
 	query := search.query()
 	if query == "" {

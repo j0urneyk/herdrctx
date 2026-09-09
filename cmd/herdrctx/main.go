@@ -13,6 +13,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/j0urneyk/herdrctx/internal/herdr"
+	"github.com/j0urneyk/herdrctx/internal/preferences"
 	"github.com/j0urneyk/herdrctx/internal/ui"
 )
 
@@ -51,6 +52,7 @@ func run() error {
 	interval := flags.Duration("interval", 3*time.Second, "session refresh interval (minimum 500ms)")
 	herdrBin := flags.String("herdr-bin", herdrBinDefault, "path to the herdr binary")
 	allowNested := flags.Bool("allow-nested", truthyEnv("HERDRCTX_ALLOW_NESTED"), "allow launching Herdr from inside Herdr")
+	allowStoppedAttach := flags.Bool("allow-stopped-attach", truthyEnv("HERDRCTX_ALLOW_STOPPED_ATTACH"), "allow attaching to stopped sessions (restarts them)")
 	completeHidden := flags.String("complete-hidden", completeHiddenDefault, "hidden directory completion mode: auto, always, or never")
 	completeCount := flags.String("complete-count", completeCountDefault, "number of visible directory completion rows")
 	showVersion := flags.Bool("version", false, "print version and exit")
@@ -107,7 +109,10 @@ func run() error {
 		return err
 	}
 
+	store, storeErr := preferences.DefaultStore()
 	program := tea.NewProgram(ui.NewModel(ui.Options{
+		PreferencesStore:     store,
+		PreferencesError:     storeErr,
 		Client:               client,
 		Context:              ctx,
 		Cancel:               cancel,
@@ -118,6 +123,7 @@ func run() error {
 		InsideHerdr:          herdr.InsideHerdr(os.Environ()),
 		CurrentSocketPath:    os.Getenv("HERDR_SOCKET_PATH"),
 		AllowNested:          *allowNested,
+		AllowStoppedAttach:   *allowStoppedAttach,
 	}))
 
 	_, err = program.Run()
