@@ -4,6 +4,8 @@ User-visible changes are recorded here. Entries under Unreleased have not been p
 
 ## Unreleased
 
+## v0.0.4 — 2026-09-09
+
 ### Added
 
 - Session status filters (`f`) and name or running-first sorting (`o`) that combine with name/directory search and preserve the selected session across refreshes.
