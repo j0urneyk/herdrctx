@@ -293,7 +293,7 @@ func TestSearchEscClearsFilter(t *testing.T) {
 	if got.search.query() != "" {
 		t.Fatalf("search query = %q, want empty", got.search.query())
 	}
-	assertSessionNames(t, got.visibleSessions(), []string{"api", "web", "db"})
+	assertSessionNames(t, got.visibleSessions(), []string{"api", "db", "web"})
 }
 
 func TestFilteredSelectionDrivesActions(t *testing.T) {
@@ -1716,5 +1716,56 @@ func keyPress(value string) tea.KeyPressMsg {
 			return tea.KeyPressMsg(tea.Key{})
 		}
 		return tea.KeyPressMsg(tea.Key{Text: value, Code: runes[0]})
+	}
+}
+
+func TestStoppedAttachPolicy(t *testing.T) {
+	t.Parallel()
+	for _, allow := range []bool{false, true} {
+		for _, running := range []bool{false, true} {
+			for _, shortcut := range []string{"enter", "a"} {
+				m := NewModel(Options{AllowStoppedAttach: allow}).(model)
+				m.setSessions([]herdr.Session{{Name: "work", Running: running}})
+				updated, cmd := m.handleKey(keyPress(shortcut))
+				got := updated.(model)
+				blocked := !running && !allow
+				if (cmd == nil) != blocked {
+					t.Fatalf("allow=%v running=%v key=%s: command blocked=%v", allow, running, shortcut, cmd == nil)
+				}
+				if blocked {
+					if got.dialog == nil || got.dialog.Kind != dialogWarning || !strings.Contains(got.dialog.Body, "HERDRCTX_ALLOW_STOPPED_ATTACH=1") || got.busy != "" {
+						t.Fatalf("blocked attach did not show configuration guidance: %+v", got.dialog)
+					}
+					closed, closeCmd := got.handleKey(keyPress("enter"))
+					if closeCmd != nil || closed.(model).dialog != nil {
+						t.Fatal("Enter should only dismiss the warning")
+					}
+				}
+				want := "attach"
+				if !running {
+					want = "attach disabled"
+					if allow {
+						want = "start and attach"
+					}
+				}
+				if m.sessionHelpKeys().Attach.Help().Desc != want {
+					t.Fatalf("wrong attach help for allow=%v running=%v", allow, running)
+				}
+				m.setSessions([]herdr.Session{{Name: "work", Running: !running}})
+				if m.sessionHelpKeys().Attach.Help().Desc == want {
+					t.Fatal("help did not follow refreshed status")
+				}
+			}
+		}
+	}
+}
+
+func TestStoppedAttachOptInPreservesNestedGuard(t *testing.T) {
+	t.Parallel()
+	m := NewModel(Options{InsideHerdr: true, AllowStoppedAttach: true}).(model)
+	m.setSessions([]herdr.Session{{Name: "work"}})
+	updated, cmd := m.attachSelected()
+	if cmd != nil || updated.(model).dialog.Title != "Cannot attach from inside Herdr" {
+		t.Fatal("stopped attach opt-in bypassed nested guard")
 	}
 }

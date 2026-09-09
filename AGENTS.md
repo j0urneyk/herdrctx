@@ -2,7 +2,7 @@
 
 ## Project overview
 
-`herdrctx` is a Go terminal UI for managing local Herdr sessions. It lists sessions, refreshes them automatically, and lets users attach, stop, delete, and create sessions from one keyboard-driven screen.
+`herdrctx` is a Go terminal UI for managing local Herdr sessions. It lists and filters sessions, refreshes them automatically, and lets users attach, stop, delete, and create sessions from one keyboard-driven screen. Favorites and full session details support navigation.
 
 Keep the project name, command, module, documentation, and release artifacts aligned with `herdrctx`.
 
@@ -51,7 +51,7 @@ Attach and create actions MUST be blocked by default when `herdrctx` is already 
 
 Use the [testing guide](docs/testing.md#choosing-checks) to select checks for the changed behavior. Go source, dependency, or build configuration changes require the four baseline Go checks; installer and session-control changes also need their relevant tests. Update tests when behavior changes.
 
-Within the requested scope, continue editing, run the applicable local checks, fix failures caused by the change, and rerun affected checks without asking for approval at each step. The documented unit tests use a fake Herdr command; local integration tests isolate their sessions and installation paths. Preserve that isolation.
+Within the requested scope, continue editing, run the applicable local checks, fix failures caused by the change, and rerun affected checks without asking for approval at each step. The documented unit tests use a fake Herdr command. Go integration tests live under `integration` with the `integration` build tag; `make test-integration` builds and runs them with isolated sessions and installation paths. Preserve that isolation.
 
 Documentation-only changes need a content and local-link review, not the Go suite. Report what was verified and any checks that could not run.
 
@@ -66,7 +66,7 @@ Release builds must stay limited to the Herdr-supported target matrix:
 
 Keep GoReleaser output names and documentation consistent with these targets.
 
-For release work, follow the [release guide](docs/releases.md), including manifest/tag alignment and published artifact verification.
+Record user-visible changes in [CHANGELOG.md](CHANGELOG.md) under `Unreleased`. For release work, follow the [release guide](docs/releases.md), including manifest/tag alignment, changelog/release-note reconciliation, and published artifact verification.
 
 ## Git and workspace safety
 

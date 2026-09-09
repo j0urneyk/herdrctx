@@ -2,7 +2,7 @@
 
 [한국어](README.ko.md)
 
-`herdrctx` is a terminal UI for managing local [Herdr](https://herdr.dev/) sessions. Search by name or directory, attach to a session, or create, stop, and delete sessions from one keyboard-driven list. The list refreshes every 3 seconds and returns when you detach from Herdr.
+`herdrctx` is a terminal UI for managing local [Herdr](https://herdr.dev/) sessions. Search and filter sessions, keep favorites at the top, and inspect full session details. Attach, create, stop, and delete sessions from one keyboard-driven list. The list refreshes every 3 seconds and returns when you detach from Herdr.
 
 ## Install
 
@@ -41,15 +41,19 @@ Run this **from a terminal outside Herdr**:
 herdrctx
 ```
 
-Select a session with `↑` / `↓` and press `enter` to attach. To create one, press `n`, enter a name such as `work`, and press `enter` to create it in the current directory and attach immediately. Detach from Herdr to return to the list.
+Select a running session with `↑` / `↓` and press `enter` to attach. To create one, press `n`, enter a name such as `work`, and press `enter` to create it in the current directory and attach immediately. Detach from Herdr to return to the list.
 
 ### Keyboard shortcuts
 
 | Key | Action |
 | --- | --- |
 | `↑` / `k`, `↓` / `j` | Move up or down |
-| `enter` / `a` | Attach to the selected session |
+| `enter` / `a` | Attach to the selected session (running only by default) |
 | `/` | Search sessions |
+| `f` | Cycle all, running, and stopped sessions |
+| `o` | Switch between name order and running first |
+| `p` | Toggle the selected session's favorite status |
+| `i` | Show full session details |
 | `n` | Create a session in the current directory and attach |
 | `N` | Choose a directory, create a session, and attach |
 | `s` | Stop the selected session, after confirmation |
@@ -68,11 +72,38 @@ When creating a session with `N`, you must enter a directory. Missing directorie
 
 New session names must be 1–64 characters, start with an ASCII letter or number, and contain only ASCII letters, numbers, `-`, `_`, or `.`. The name `help` is reserved. Existing sessions remain visible even if their names do not meet the creation rules.
 
+### Filters, favorites, and details
+
+The list starts with all sessions in name order. Use `f` to cycle through all, running, and stopped sessions; `o` switches between name order and running first. The current conditions and matching count appear above the list. Status filters combine with search. `esc` in search clears only the search text. Filters and sorting survive refreshes and reset when the app restarts.
+
+Press `p` to mark the selected session with `⭐` and keep it above other matching sessions. The chosen sort applies within each group; favorites still have to match the current search and status filter. Favorites are saved by exact session name and survive deletion: a new session with the same name inherits the favorite. The default session still has its separate `*` marker.
+
+Press `i` to see full session values. Use `↑` / `↓` or `PgUp` / `PgDn` to scroll, and `enter`, `esc`, or `q` to close. Details follow refreshes and indicate when a session disappears or a refresh fails. **Directory** and directory search refer to Herdr's session-state storage path, not the project's working directory.
+
+### Saved preferences
+
+Favorites are stored in `herdrctx/preferences.json` under the platform's user configuration directory:
+
+| Platform | Default path |
+| --- | --- |
+| macOS | `~/Library/Application Support/herdrctx/preferences.json` |
+| Linux | `$XDG_CONFIG_HOME/herdrctx/preferences.json`, or `~/.config/herdrctx/preferences.json` when unset |
+
+The file is created on the first saved change. A failed save leaves the previous preferences intact and opens an error dialog. Writes use an atomic replacement and an application lock; if another instance is saving, retry the action. Each save reloads the file and changes only the selected favorite, preserving other instances' changes. Changes are not watched continuously.
+
+If preferences cannot be read at startup, herdrctx shows a warning and disables saved preferences while allowing ordinary session management. It preserves the original file. Fix it and restart to re-enable saving. To remove favorites for absent sessions or edit JSON manually, close herdrctx first. The versioned format and implementation details are documented in [UI behavior](docs/ui.md#saved-preferences).
+
 ### Stopping and deleting sessions
 
 **Stopping a session can end the shells, servers, and other processes running inside it.** Both stopping and deleting ask for confirmation: `y` / `enter` confirms, and `n` / `esc` cancels.
 
 Deleting removes the saved session state. Stop a running session before deleting it. The default session cannot be deleted.
+
+### Attaching to stopped sessions
+
+`enter` / `a` only attaches to running sessions by default. Selecting a stopped session shows a warning without invoking Herdr. To allow starting and attaching to stopped sessions, run `herdrctx --allow-stopped-attach` or set `HERDRCTX_ALLOW_STOPPED_ATTACH=1`. Use `--allow-stopped-attach=false` to override that environment setting. The footer shows `start and attach` for a stopped session when enabled; no additional confirmation is shown.
+
+This setting applies to session-list attachment. `n` and `N` still create or reuse sessions, including restarting an existing stopped session with the same name. The guard uses the latest list status; a running session that stops between refresh and attach can still be restarted by Herdr.
 
 ## Options
 
@@ -118,6 +149,11 @@ make test
 make vet
 make lint
 make build
+make test-integration
 ```
 
+Integration tests are Go tests behind the `integration` build tag. `make test-integration` builds the app and runs the local suites, downloading checksum-pinned Herdr test binaries on first use. To run one suite, use `make test-integration INTEGRATION_ARGS='-run ^TestNavigation$'`.
+
 CI covers Ubuntu 24.04 and macOS 15 on both supported architectures. See the [testing guide](docs/testing.md) to choose checks for your change, including tests with real Herdr sessions, and the [release guide](docs/releases.md) for publishing and release builds.
+
+User-visible changes are recorded in the [changelog](CHANGELOG.md).

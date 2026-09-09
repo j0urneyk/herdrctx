@@ -3,6 +3,10 @@ package ui
 import "charm.land/bubbles/v2/key"
 
 type keyMap struct {
+	Filter            key.Binding
+	Sort              key.Binding
+	Favorite          key.Binding
+	Details           key.Binding
 	Up                key.Binding
 	Down              key.Binding
 	Attach            key.Binding
@@ -28,6 +32,10 @@ type keyMap struct {
 
 func defaultKeyMap() keyMap {
 	return keyMap{
+		Filter:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "status filter")),
+		Sort:     key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "sort")),
+		Favorite: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "favorite")),
+		Details:  key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "details")),
 		Up: key.NewBinding(
 			key.WithKeys("up", "k"),
 			key.WithHelp("↑/k", "move up"),
@@ -121,8 +129,28 @@ func (k keyMap) ShortHelp() []key.Binding {
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Attach},
+		{k.Up, k.Down, k.Attach, k.Search, k.SwitchSearchScope, k.Refresh},
+		{k.Filter, k.Sort, k.Favorite, k.Details, k.Help, k.Quit},
 		{k.NewSession, k.NewSessionWithDir, k.Stop, k.Delete},
-		{k.Search, k.SwitchSearchScope, k.Refresh, k.Help, k.Quit},
 	}
+}
+
+func (m model) sessionHelpKeys() keyMap {
+	keys := m.keys
+	if session, ok := m.selectedSession(); ok && !session.Running {
+		description := "attach disabled"
+		if m.allowStoppedAttach {
+			description = "start and attach"
+		}
+		keys.Attach.SetHelp("enter/a", description)
+	}
+	return keys
+}
+
+func (m model) helpView() string {
+	keys := m.sessionHelpKeys()
+	if m.help.ShowAll {
+		return m.help.FullHelpView(keys.FullHelp())
+	}
+	return m.help.ShortHelpView(keys.ShortHelp())
 }

@@ -35,6 +35,13 @@ func (m model) inputLayers() []inputLayer {
 		return append(layers, inputLayer{handle: handleDialogInput})
 	}
 
+	if m.details != nil {
+		return append(layers, inputLayer{handle: handleDetailsInput})
+	}
+	if m.preferencesPending {
+		return append(layers, inputLayer{handle: handleRootQuitInput}, inputLayer{handle: handlePreferencesBusyInput})
+	}
+
 	if m.newSession != nil {
 		if m.newSession.completionLayerOpen() {
 			layers = append(layers, inputLayer{handle: handleNewSessionCompletionInput})
@@ -141,6 +148,21 @@ func handleSearchInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 
 func handleRootInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 	switch {
+	case key.Matches(msg, m.keys.Filter):
+		name, cursor := m.selectedSessionSnapshot()
+		m.filter = (m.filter + 1) % 3
+		m.configureTablePreserving(name, cursor)
+		return inputConsumed(m, nil)
+	case key.Matches(msg, m.keys.Sort):
+		name, cursor := m.selectedSessionSnapshot()
+		m.runningFirst = !m.runningFirst
+		m.configureTablePreserving(name, cursor)
+		return inputConsumed(m, nil)
+	case key.Matches(msg, m.keys.Favorite):
+		next, cmd := m.toggleFavorite()
+		return inputConsumed(next.(model), cmd)
+	case key.Matches(msg, m.keys.Details):
+		return inputConsumed(m.openDetails(), nil)
 	case key.Matches(msg, m.keys.Up):
 		m.table.MoveUp(1)
 		m.refreshTableRowsForCurrentCursor()
@@ -151,6 +173,7 @@ func handleRootInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 		return inputConsumed(m, nil)
 	case key.Matches(msg, m.keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
+		m.configureTable()
 		return inputConsumed(m, nil)
 	case key.Matches(msg, m.keys.Search):
 		selectedName, oldCursor := m.selectedSessionSnapshot()
@@ -194,4 +217,11 @@ func inputConsumed(m model, cmd tea.Cmd) inputLayerResult {
 
 func inputUnhandled(m model) inputLayerResult {
 	return inputLayerResult{model: m}
+}
+
+func handlePreferencesBusyInput(m model, msg tea.KeyPressMsg) inputLayerResult {
+	if key.Matches(msg, m.keys.Details) {
+		return inputConsumed(m.openDetails(), nil)
+	}
+	return inputConsumed(m.handleBusyKey(msg), nil)
 }

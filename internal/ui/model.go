@@ -15,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/j0urneyk/herdrctx/internal/herdr"
+	"github.com/j0urneyk/herdrctx/internal/preferences"
 )
 
 const (
@@ -33,6 +34,8 @@ const (
 
 // Options configures the TUI model.
 type Options struct {
+	PreferencesStore     *preferences.Store
+	PreferencesError     error
 	Client               *herdr.Client
 	Context              context.Context
 	Cancel               context.CancelFunc
@@ -44,14 +47,23 @@ type Options struct {
 	InsideHerdr          bool
 	CurrentSocketPath    string
 	AllowNested          bool
+	AllowStoppedAttach   bool
 }
 
 type model struct {
-	client          *herdr.Client
-	ctx             context.Context
-	cancel          context.CancelFunc
-	refreshInterval time.Duration
-	version         string
+	filter               statusFilter
+	runningFirst         bool
+	preferences          preferences.Data
+	preferencesStore     *preferences.Store
+	preferencesError     error
+	preferencesPending   bool
+	preferencesRequestID uint64
+	details              *sessionDetails
+	client               *herdr.Client
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	refreshInterval      time.Duration
+	version              string
 
 	keys    keyMap
 	help    help.Model
@@ -70,6 +82,7 @@ type model struct {
 	insideHerdr          bool
 	currentSocketPath    string
 	allowNested          bool
+	allowStoppedAttach   bool
 
 	width  int
 	height int
@@ -148,6 +161,9 @@ func NewModel(opts Options) tea.Model {
 	}
 	m := model{
 		client:               client,
+		preferences:          preferences.Empty(),
+		preferencesStore:     opts.PreferencesStore,
+		preferencesError:     opts.PreferencesError,
 		ctx:                  ctx,
 		cancel:               cancel,
 		refreshInterval:      interval,
@@ -163,18 +179,20 @@ func NewModel(opts Options) tea.Model {
 		insideHerdr:          opts.InsideHerdr,
 		currentSocketPath:    opts.CurrentSocketPath,
 		allowNested:          opts.AllowNested,
+		allowStoppedAttach:   opts.AllowStoppedAttach,
 		loading:              true,
 		refreshRequestID:     1,
 		status:               "Loading sessions…",
 		statusKind:           statusInfo,
 	}
+	m.preferencesPending = opts.PreferencesStore != nil || opts.PreferencesError != nil
 	m.configureTable()
 
 	return m
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.loadSessionsCmd(), m.scheduleRefresh(), m.spinner.Tick)
+	return tea.Batch(m.loadSessionsCmd(), m.scheduleRefresh(), m.spinner.Tick, m.initialPreferencesCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -189,6 +207,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case preferencesLoadedMsg:
+		return m.handlePreferencesLoaded(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -197,6 +217,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.newSession != nil {
 			m.newSession.setWidth(msg.Width)
 		}
+		m.resizeNavigation()
 		m.configureTable()
 		return m, tea.Batch(cmds...)
 
@@ -222,12 +243,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showRefreshing = false
 		if msg.Err != nil {
 			m.setStatus(fmt.Sprintf("Refresh failed: %v", msg.Err), statusError)
+			if m.details != nil {
+				m.details.notice = "Refresh failed; showing last known values."
+				m.resizeNavigation()
+			}
 			return m, tea.Batch(cmds...)
 		}
 
 		m.setSessions(msg.Sessions)
 		m.lastRefresh = msg.RefreshedAt
 		m.setStatus(fmt.Sprintf("Loaded %d session(s).", len(msg.Sessions)), statusSuccess)
+		m.updateDetails()
 		return m, tea.Batch(cmds...)
 
 	case actionFinishedMsg:
@@ -260,6 +286,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updated, tea.Batch(cmds...)
 	}
 
+	if m.dialog != nil {
+		return m, tea.Batch(cmds...)
+	}
+	if m.details != nil {
+		return m, tea.Batch(cmds...)
+	}
 	if m.newSession != nil {
 		form := *m.newSession
 		var cmd tea.Cmd
@@ -311,6 +343,7 @@ func (m model) handleBusyKey(msg tea.KeyPressMsg) model {
 		m.refreshTableRowsForCurrentCursor()
 	case key.Matches(msg, m.keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
+		m.configureTable()
 	}
 
 	return m
@@ -390,16 +423,13 @@ func (m model) submitNewSession() (tea.Model, tea.Cmd) {
 		m.configureTable()
 		return m, cmd
 	}
+	m.newSession = &form
 	cmd, err := m.client.CreateAttachCommand(submission.Name, submission.Dir)
 	if err != nil {
-		form.setError(err)
-		form.closeCompletion()
-		focusCmd := form.focusActive()
-		m.newSession = &form
-		m.configureTable()
-		return m, focusCmd
+		m.newSession.setError(err)
+		m.newSession.closeCompletion()
+		return m, m.newSession.focusActive()
 	}
-
 	m.newSession = nil
 	m.busy = fmt.Sprintf("new session %q", submission.Name)
 	m.setStatus(fmt.Sprintf("Creating and attaching to %q…", submission.Name), statusInfo)
@@ -418,6 +448,10 @@ func (m model) attachSelected() (tea.Model, tea.Cmd) {
 	}
 	if m.nestedHerdrBlocked() {
 		m.showDialog(dialogWarning, "Cannot attach from inside Herdr", m.nestedHerdrAttachMessage(session.Name, session.SocketPath))
+		return m, nil
+	}
+	if !session.Running && !m.allowStoppedAttach {
+		m.showDialog(dialogWarning, "Stopped session attach disabled", fmt.Sprintf("%q is stopped. Attaching would restart it.\n\nTo allow this, restart herdrctx with --allow-stopped-attach or HERDRCTX_ALLOW_STOPPED_ATTACH=1.", session.Name))
 		return m, nil
 	}
 	cmd, err := m.client.AttachCommand(session.Name)
@@ -552,7 +586,7 @@ func (m *model) startRefresh() tea.Cmd {
 }
 
 func (m model) visibleSessions() []herdr.Session {
-	return filterSessionsBySearch(m.sessions, m.search)
+	return m.orderedSessions()
 }
 
 func (m model) visibleSessionCount() int {
@@ -636,13 +670,13 @@ func (m *model) configureTablePreserving(selectedName string, oldCursor int) {
 	})
 	m.table.SetWidth(tableWidth)
 
-	height := m.height - 9
+	height := m.height - 10 - max(0, lipgloss.Height(m.helpView())-1)
 	if m.search.active {
 		height -= 4
 	} else if m.search.hasQuery() {
 		height--
 	}
-	m.table.SetHeight(max(5, height))
+	m.table.SetHeight(max(3, height))
 	m.setTableRowsPreserving(selectedName, oldCursor)
 }
 
@@ -665,12 +699,12 @@ func (m model) selectedSessionSnapshot() (string, int) {
 func (m *model) setTableRowsPreserving(selectedName string, oldCursor int) {
 	visible := m.visibleSessions()
 	cursor := selectedCursorForVisibleSessions(visible, selectedName, oldCursor)
-	m.table.SetRows(sessionRowsWithSelection(visible, m.table.Columns(), cursor))
+	m.table.SetRows(m.navigationRows(visible, cursor))
 	m.table.SetCursor(cursor)
 }
 
 func (m *model) refreshTableRowsForCurrentCursor() {
-	m.table.SetRows(sessionRowsWithSelection(m.visibleSessions(), m.table.Columns(), m.table.Cursor()))
+	m.table.SetRows(m.navigationRows(m.visibleSessions(), m.table.Cursor()))
 }
 
 func selectedCursorForVisibleSessions(visible []herdr.Session, selectedName string, oldCursor int) int {
@@ -803,6 +837,8 @@ func (m model) render() string {
 	b.WriteString("\n")
 	b.WriteString(m.summaryLine())
 	b.WriteString("\n")
+	b.WriteString(subtleStyle.Render(m.navigationSummary()))
+	b.WriteString("\n")
 	b.WriteString("\n")
 	if searchBar := m.searchBarLine(); searchBar != "" {
 		b.WriteString(searchBar)
@@ -829,11 +865,7 @@ func (m model) render() string {
 		b.WriteString(m.statusView())
 		b.WriteString("\n")
 
-		if m.help.ShowAll {
-			b.WriteString(m.help.FullHelpView(m.keys.FullHelp()))
-		} else {
-			b.WriteString(m.help.ShortHelpView(m.keys.ShortHelp()))
-		}
+		b.WriteString(m.helpView())
 	}
 
 	view := b.String()
@@ -845,6 +877,11 @@ func (m model) render() string {
 }
 
 func (m model) overlayView() string {
+	if m.dialog == nil {
+		if m.details != nil {
+			return m.details.render(m.width)
+		}
+	}
 	if m.dialog != nil {
 		return m.dialog.render(m.width)
 	}
@@ -860,6 +897,9 @@ func (m model) overlayView() string {
 
 func (m model) summaryLine() string {
 	parts := []string{fmt.Sprintf("refresh: %s", m.refreshInterval)}
+	if m.preferencesPending {
+		parts = append(parts, m.preferenceProgress())
+	}
 	if !m.lastRefresh.IsZero() {
 		parts = append(parts, "last: "+m.lastRefresh.Format("15:04:05"))
 	}
@@ -889,6 +929,9 @@ func (m model) searchBarLine() string {
 }
 
 func (m model) noSearchResultsMessage() string {
+	if m.filter != filterAll {
+		return "No sessions match the current status and search filters."
+	}
 	query := sanitizeDisplay(m.search.query())
 	return fmt.Sprintf("No sessions match %s search %q.", m.search.scope, query)
 }
