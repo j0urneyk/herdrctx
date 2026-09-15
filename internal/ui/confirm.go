@@ -19,6 +19,9 @@ type confirmation struct {
 }
 
 func (c confirmation) title() string {
+	if c.Session.Target != "" {
+		return fmt.Sprintf("%s session %q on %s?", map[confirmAction]string{confirmStop: "Stop", confirmDelete: "Delete"}[c.Action], c.Session.Name, sanitizeDisplay(c.Session.Target))
+	}
 	switch c.Action {
 	case confirmStop:
 		return fmt.Sprintf("Stop session %q?", c.Session.Name)

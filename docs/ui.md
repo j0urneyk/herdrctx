@@ -35,9 +35,31 @@ Create directories with `0700`, files with `0600`. Acquire a nonblocking advisor
 
 Run storage IO in `tea.Cmd` and ignore stale result IDs. While IO is pending, prevent overlapping preference changes and new Herdr actions, allow root details/movement/help/quit. Continuous external change watching is outside this feature. Session refreshes only update Herdr session data: they must not prune favorite names.
 
+Local-only writes keep version 1 until the first remote favorite change. That change writes version 2, preserving `favorites` as local names and adding host-scoped records:
+
+```json
+{
+  "version": 2,
+  "favorites": ["api"],
+  "remote_favorites": [{"target": "workbox", "name": "api"}]
+}
+```
+
+An empty remote array may be omitted. The exact target spelling is the identity; aliases and SSH URLs are not resolved into a canonical host. Version 2 stays version 2 after removing remote favorites. Old apps reject it without overwriting it, including when a still-running old instance attempts its next save. New instances reload and preserve changes across both scopes. Session identities and detail/action targets include the host; remote filesystem values are display data, not local paths.
+
+## Remote sessions
+
+`--remote <target>` fixes the host for the lifetime of the app. There is no host switcher or combined host list. Show the target in the header, details, creation form, and stop/delete confirmations. Native remote attach/create uses `herdr --remote <target> --session <name>` via `tea.ExecProcess`. Management uses non-interactive SSH with bounded connection and command timeouts and requires `herdr` on the remote PATH. The local binary and each remote list's reported version must meet the 0.8.2 remote minimum; local mode retains its 0.6.5 minimum.
+
+Remote `n` validates the name and hands off immediately using the remote default directory. It performs no local directory resolution. Remote `N` opens a warning and does not open the directory form. Nested guards precede these flows. Socket equality implies the same containing session only in local mode.
+
+A failed remote refresh retains the list with a `last known values` indicator. An unknown mutation outcome also marks it stale. List-based attach/stop/delete from stale data or while a refresh is running first re-fetches the same host, keeping the original host/session identity fixed. A new check waits for the active query to exit before starting; its result is never authorized by the older query. Cancelling an active check keeps the query slot occupied until the command exits and leaves the list marked as needing revalidation until a new query succeeds. Refreshes requested on foreground return also wait for an active query and discard its old result. `Esc` cancels the check; other action and navigation keys are consumed, while quit remains available. Ignore late responses after cancellation and background lists started before the check. Recheck stopped/default/disappeared states against the result. A stale confirmation also rechecks on acceptance; delete still performs its final preflight. This does not make the list-and-action sequence atomic. Explicit `n` remains available for foreground setup.
+
+When a remote mutation's result cannot be established, show `Remote result unknown` with the target and session. A killed SSH client does not prove the remote operation was cancelled. Never replay mutations automatically. Refresh only reads current state and cannot establish which actor caused it. A new user-requested mutation must meet the normal conditions and confirmation requirements. Action errors remain alerts, list errors remain status messages, and successful refreshes do not dismiss an open alert.
+
 ## Attach and create
 
-Keep Herdr as the external CLI boundary. Attach uses `herdr session attach <name>`. Creation uses `herdr --session <name>` with the child process's working directory set to the selected start directory. Both use Bubble Tea's `tea.ExecProcess` to hand the terminal to Herdr immediately. The TUI resumes after Herdr returns, normally when the user detaches, and refreshes the session list. Do not replace this with background creation or a second attach step. Herdr owns whether the named session is created or an existing one is reused.
+Keep Herdr as the external CLI boundary. In local mode, attach uses `herdr session attach <name>`. Creation uses `herdr --session <name>` with the child process's working directory set to the selected start directory. Both use Bubble Tea's `tea.ExecProcess` to hand the terminal to Herdr immediately. The TUI resumes after Herdr returns, normally when the user detaches, and refreshes the session list. Do not replace this with background creation or a second attach step. Herdr owns whether the named session is created or an existing one is reused.
 
 Session-list `enter` / `a` blocks stopped sessions by default with a warning explaining restart semantics and the `--allow-stopped-attach` / `HERDRCTX_ALLOW_STOPPED_ATTACH=1` opt-in. An explicit `--allow-stopped-attach=false` overrides the environment. With the opt-in, attach immediately without confirmation. Show `attach disabled` for a selected stopped session by default, `start and attach` when enabled, and `attach` for running sessions in both short and expanded help. Derive this from the selected session on each render. Keep the nested guard first and independent. Creation retains its existing create/reuse behavior, even for stopped names. This policy uses the latest loaded session status, not an atomic Herdr-side no-start guarantee.
 

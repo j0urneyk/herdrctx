@@ -237,6 +237,11 @@ func (p *terminal) resize(cols, rows uint16) {
 func (p *terminal) quit() {
 	p.s.t.Helper()
 	p.send("q")
+	p.waitExit()
+}
+
+func (p *terminal) waitExit() {
+	p.s.t.Helper()
 	select {
 	case <-p.exitDone:
 		must(p.s.t, p.exitErr)

@@ -10,6 +10,7 @@ const maxSessionNameBytes = 64
 
 // Session is one entry from `herdr session list --json`.
 type Session struct {
+	Target  string `json:"-"`
 	Default bool   `json:"default"`
 	Name    string `json:"name"`
 	Running bool   `json:"running"`
@@ -17,6 +18,13 @@ type Session struct {
 	SessionDir string `json:"session_dir"`
 	SocketPath string `json:"socket_path"`
 }
+
+type SessionID struct {
+	Target string `json:"target"`
+	Name   string `json:"name"`
+}
+
+func (s Session) ID() SessionID { return SessionID{Target: s.Target, Name: s.Name} }
 
 // Status returns the short display status for a session.
 func (s Session) Status() string {

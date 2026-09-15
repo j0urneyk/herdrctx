@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -83,6 +84,11 @@ type model struct {
 	currentSocketPath    string
 	allowNested          bool
 	allowStoppedAttach   bool
+	remoteStale          bool
+	remotePending        *remotePreflight
+	remoteRequestID      uint64
+	remoteCheckingID     uint64
+	remoteRefreshQueued  bool
 
 	width  int
 	height int
@@ -207,6 +213,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case remotePreflightMsg:
+		return m.handleRemotePreflight(msg)
 	case preferencesLoadedMsg:
 		return m.handlePreferencesLoaded(msg)
 	case tea.WindowSizeMsg:
@@ -241,7 +249,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.loading = false
 		m.showRefreshing = false
+		if m.remotePending != nil && m.remotePending.Waiting {
+			return m.startRemotePreflight()
+		}
+		if m.remoteRefreshQueued {
+			cmd := m.reloadAfterAction()
+			return m, cmd
+		}
 		if msg.Err != nil {
+			m.remoteStale = m.client.Remote != nil
 			m.setStatus(fmt.Sprintf("Refresh failed: %v", msg.Err), statusError)
 			if m.details != nil {
 				m.details.notice = "Refresh failed; showing last known values."
@@ -251,6 +267,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.setSessions(msg.Sessions)
+		m.remoteStale = false
 		m.lastRefresh = msg.RefreshedAt
 		m.setStatus(fmt.Sprintf("Loaded %d session(s).", len(msg.Sessions)), statusSuccess)
 		m.updateDetails()
@@ -259,24 +276,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case actionFinishedMsg:
 		m.busy = ""
 		if msg.Err != nil {
-			m.showDialog(dialogError, fmt.Sprintf("%s failed", msg.Action), fmt.Sprintf("%s %q failed:\n\n%v", msg.Action, msg.Name, msg.Err))
-			cmds = append(cmds, m.startRefresh())
-			return m, tea.Batch(append(cmds, m.loadSessionsCmd(), m.spinner.Tick)...)
+			var unknown *herdr.OutcomeUnknownError
+			if errors.As(msg.Err, &unknown) {
+				m.remoteStale = true
+				m.showDialog(dialogError, "Remote result unknown", unknown.Error())
+			} else {
+				m.showDialog(dialogError, fmt.Sprintf("%s failed", msg.Action), fmt.Sprintf("%s %q failed:\n\n%v", msg.Action, msg.Name, msg.Err))
+			}
+			cmd := m.reloadAfterAction()
+			return m, cmd
 		}
 
-		cmds = append(cmds, m.startRefresh())
 		m.setStatus(fmt.Sprintf("%s %q complete.", msg.Action, msg.Name), statusSuccess)
-		return m, tea.Batch(append(cmds, m.loadSessionsCmd(), m.spinner.Tick)...)
+		cmd := m.reloadAfterAction()
+		return m, cmd
 
 	case attachFinishedMsg:
 		m.busy = ""
-		cmds = append(cmds, m.startRefresh())
 		if msg.Err != nil {
 			m.showDialog(dialogError, "Attach failed", fmt.Sprintf("Attach %q failed:\n\n%v", msg.Name, msg.Err))
 		} else {
 			m.setStatus(fmt.Sprintf("Returned from %q.", msg.Name), statusInfo)
 		}
-		return m, tea.Batch(append(cmds, m.loadSessionsCmd(), m.spinner.Tick)...)
+		cmd := m.reloadAfterAction()
+		return m, cmd
 
 	case tea.KeyPressMsg:
 		updated, cmd := m.handleKey(msg)
@@ -362,6 +385,13 @@ func (m model) handleConfirmationKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	confirmed := *m.confirm
 	m.confirm = nil
+	if m.needsRemoteCheck() {
+		return m.checkRemoteSession(confirmed.Session, string(confirmed.Action), true)
+	}
+	return m.executeConfirmation(confirmed)
+}
+
+func (m model) executeConfirmation(confirmed confirmation) (tea.Model, tea.Cmd) {
 	if !m.revalidateConfirmation(&confirmed) {
 		return m, nil
 	}
@@ -400,8 +430,13 @@ func (m model) openNewSession(mode newSessionMode) (tea.Model, tea.Cmd) {
 		m.showDialog(dialogWarning, "Cannot create from inside Herdr", m.nestedHerdrCreateMessage())
 		return m, nil
 	}
+	if m.client.Remote != nil && mode == newSessionWithDir {
+		m.showDialog(dialogWarning, "Remote directory creation unavailable", "Use n to create and attach in the remote default directory. Choosing a remote directory with N is not supported.")
+		return m, nil
+	}
 
 	form, cmd := newSessionFormModel(mode, m.defaultDir, m.width, m.completeHidden, m.completeVisibleCount)
+	form.remoteTarget = m.client.TargetID()
 	m.newSession = &form
 	m.configureTable()
 	m.setStatus("Create a new session and attach immediately.", statusInfo)
@@ -446,9 +481,16 @@ func (m model) attachSelected() (tea.Model, tea.Cmd) {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before attaching.")
 		return m, nil
 	}
+	return m.attachSession(session)
+}
+
+func (m model) attachSession(session herdr.Session) (tea.Model, tea.Cmd) {
 	if m.nestedHerdrBlocked() {
 		m.showDialog(dialogWarning, "Cannot attach from inside Herdr", m.nestedHerdrAttachMessage(session.Name, session.SocketPath))
 		return m, nil
+	}
+	if m.needsRemoteCheck() {
+		return m.checkRemoteSession(session, "attach", false)
 	}
 	if !session.Running && !m.allowStoppedAttach {
 		m.showDialog(dialogWarning, "Stopped session attach disabled", fmt.Sprintf("%q is stopped. Attaching would restart it.\n\nTo allow this, restart herdrctx with --allow-stopped-attach or HERDRCTX_ALLOW_STOPPED_ATTACH=1.", session.Name))
@@ -477,7 +519,7 @@ func (m model) nestedHerdrCreateMessage() string {
 }
 
 func (m model) nestedHerdrAttachMessage(target string, socketPath string) string {
-	if socketPath != "" && socketPath == m.currentSocketPath {
+	if m.client.Remote == nil && socketPath != "" && socketPath == m.currentSocketPath {
 		return fmt.Sprintf("Already inside %q; attaching here would launch nested Herdr.", target)
 	}
 
@@ -489,6 +531,9 @@ func (m model) confirmStop() (tea.Model, tea.Cmd) {
 	if !ok {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before stopping it.")
 		return m, nil
+	}
+	if m.needsRemoteCheck() {
+		return m.checkRemoteSession(session, "stop", false)
 	}
 	if !session.Running {
 		m.showDialog(dialogWarning, "Session already stopped", fmt.Sprintf("%q is already stopped.", session.Name))
@@ -509,6 +554,9 @@ func (m model) confirmDelete() (tea.Model, tea.Cmd) {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before deleting it.")
 		return m, nil
 	}
+	if m.needsRemoteCheck() {
+		return m.checkRemoteSession(session, "delete", false)
+	}
 	if session.Default {
 		m.showDialog(dialogWarning, "Default session cannot be deleted", "Herdr does not support deleting the default session.")
 		return m, nil
@@ -527,7 +575,7 @@ func (m model) confirmDelete() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) revalidateConfirmation(confirmed *confirmation) bool {
-	session, ok := m.sessionByName(confirmed.Session.Name)
+	session, ok := m.sessionByID(confirmed.Session.ID())
 	if !ok {
 		m.showDialog(dialogWarning, "Session no longer available", fmt.Sprintf("%q is no longer in the session list.", confirmed.Session.Name))
 		return false
@@ -788,10 +836,6 @@ func (m model) selectedSession() (herdr.Session, bool) {
 	return visible[cursor], true
 }
 
-func (m model) sessionByName(name string) (herdr.Session, bool) {
-	return sessionByName(m.sessions, name)
-}
-
 func sessionByName(sessions []herdr.Session, name string) (herdr.Session, bool) {
 	for _, session := range sessions {
 		if session.Name == name {
@@ -830,6 +874,9 @@ func (m model) render() string {
 	var b strings.Builder
 
 	title := "herdrctx"
+	if m.client.Remote != nil {
+		title += " · " + sanitizeDisplay(m.client.TargetID())
+	}
 	if m.version != "" && m.version != "dev" {
 		title += " " + subtleStyle.Render("v"+m.version)
 	}

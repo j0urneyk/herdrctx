@@ -24,6 +24,7 @@ var errCommandOutputLimit = errors.New("command output exceeded capture limit")
 // Client shells out to the Herdr CLI.
 type Client struct {
 	Bin       string
+	Remote    *RemoteTarget
 	Timeout   time.Duration
 	WaitDelay time.Duration
 }
@@ -91,6 +92,9 @@ func NewClient(bin string) *Client {
 
 // ListSessions returns the current Herdr session list.
 func (c *Client) ListSessions(ctx context.Context) ([]Session, error) {
+	if c.Remote != nil {
+		return c.remoteList(ctx)
+	}
 	stdout, err := c.runWithOutputLimit(ctx, maxSessionListOutputBytes, "session", "list", "--json")
 	if err != nil {
 		return nil, err
@@ -109,8 +113,7 @@ func (c *Client) StopSession(ctx context.Context, name string) error {
 		return fmt.Errorf("session name %q cannot be stopped by Herdr", name)
 	}
 
-	_, err = c.run(ctx, "session", "stop", name, "--json")
-	return err
+	return c.runSessionMutation(ctx, "stop", name)
 }
 
 // DeleteSession deletes a stopped Herdr session.
@@ -123,8 +126,7 @@ func (c *Client) DeleteSession(ctx context.Context, name string) error {
 		return fmt.Errorf("session name %q cannot be deleted by Herdr", name)
 	}
 
-	_, err = c.run(ctx, "session", "delete", name, "--json")
-	return err
+	return c.runSessionMutation(ctx, "delete", name)
 }
 
 // AttachCommand returns the foreground attach command for a Herdr session.
@@ -136,6 +138,10 @@ func (c *Client) AttachCommand(name string) (*exec.Cmd, error) {
 	if IsAttachHelpName(name) {
 		return nil, fmt.Errorf("session name %q cannot be attached by Herdr", name)
 	}
+	if c.Remote != nil {
+		// #nosec G204 -- Invoke the configured Herdr CLI with a validated SSH target and session name.
+		return exec.Command(c.Bin, "--remote", c.Remote.Destination, "--session", name), nil
+	}
 
 	// #nosec G204 -- The configured Herdr binary is the intended integration boundary.
 	return exec.Command(c.Bin, "session", "attach", name), nil
@@ -146,6 +152,10 @@ func (c *Client) CreateAttachCommand(name string, startDir string) (*exec.Cmd, e
 	name, err := ValidateNewSessionName(name)
 	if err != nil {
 		return nil, err
+	}
+	if c.Remote != nil {
+		// #nosec G204 -- Invoke the configured Herdr CLI with a validated SSH target and session name.
+		return exec.Command(c.Bin, "--remote", c.Remote.Destination, "--session", name), nil
 	}
 
 	startDir, err = ResolveStartDir(startDir, "")
@@ -164,6 +174,10 @@ func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 func (c *Client) runWithOutputLimit(ctx context.Context, outputLimit int, args ...string) ([]byte, error) {
+	return c.executeWithOutputLimit(ctx, outputLimit, c.Bin, args...)
+}
+
+func (c *Client) executeWithOutputLimit(ctx context.Context, outputLimit int, bin string, args ...string) ([]byte, error) {
 	if c.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.Timeout)
@@ -171,7 +185,7 @@ func (c *Client) runWithOutputLimit(ctx context.Context, outputLimit int, args .
 	}
 
 	// #nosec G204 -- The configured Herdr binary is the intended integration boundary.
-	cmd := exec.CommandContext(ctx, c.Bin, args...)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		return killCommandGroup(cmd)
@@ -196,7 +210,9 @@ func (c *Client) runWithOutputLimit(ctx context.Context, outputLimit int, args .
 		return stdout.Bytes(), nil
 	}
 
-	return nil, c.commandError(ctx, args, stdout.String(), stderr.String(), err)
+	commandErr := c.commandError(ctx, args, stdout.String(), stderr.String(), err)
+	commandErr.Args[0] = bin
+	return nil, commandErr
 }
 
 func killCommandGroup(cmd *exec.Cmd) error {
@@ -254,7 +270,7 @@ func (b *cappedBuffer) String() string {
 	return fmt.Sprintf("%s[output truncated after %d bytes]", value, b.limit)
 }
 
-func (c *Client) commandError(ctx context.Context, args []string, stdout string, stderr string, err error) error {
+func (c *Client) commandError(ctx context.Context, args []string, stdout string, stderr string, err error) *CommandError {
 	exitCode := -1
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

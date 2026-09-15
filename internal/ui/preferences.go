@@ -90,14 +90,14 @@ func (m model) toggleFavorite() (tea.Model, tea.Cmd) {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before changing favorites.")
 		return m, nil
 	}
-	cmd := m.saveFavoriteCmd(preferences.Change{FavoriteName: s.Name, Favorite: !m.preferences.Favorite(s.Name)})
+	cmd := m.saveFavoriteCmd(preferences.Change{Target: s.Target, FavoriteName: s.Name, Favorite: !m.preferences.FavoriteSession(s.ID())})
 	return m, cmd
 }
 
 func (m model) navigationRows(sessions []herdr.Session, cursor int) []table.Row {
 	rows := sessionRowsWithSelection(sessions, m.table.Columns(), cursor)
 	for i, s := range sessions {
-		if m.preferences.Favorite(s.Name) {
+		if m.preferences.FavoriteSession(s.ID()) {
 			rows[i][0] = displayCell("⭐\ufe0f "+s.DisplayName(), columnWidth(m.table.Columns(), 0))
 			if !s.Running && i != cursor {
 				rows[i][0] = stoppedSessionRowStyle.Render(rows[i][0])

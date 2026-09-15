@@ -29,3 +29,15 @@ func TestRunRejectsTooSmallInterval(t *testing.T) {
 		t.Fatalf("run() error = %q, want minimum interval", err.Error())
 	}
 }
+
+func TestRunRejectsInvalidRemoteBeforeTerminalSetup(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	for _, target := range []string{"", "-oProxyCommand=bad", "bad host"} {
+		os.Args = []string{"herdrctx", "--remote=" + target}
+		err := run()
+		if err == nil || !strings.Contains(err.Error(), "--remote:") {
+			t.Fatalf("target %q: %v", target, err)
+		}
+	}
+}

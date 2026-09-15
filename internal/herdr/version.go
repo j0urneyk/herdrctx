@@ -35,6 +35,9 @@ func (c *Client) EnsureMinimumVersion(ctx context.Context) error {
 	if found.compare(minimumSupportedSemanticVersion) < 0 {
 		return fmt.Errorf("herdrctx requires herdr %s or newer; found %s", MinimumSupportedVersion, found)
 	}
+	if c.Remote != nil {
+		return checkRemoteVersion(stdout)
+	}
 
 	return nil
 }

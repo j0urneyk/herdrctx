@@ -54,6 +54,9 @@ func (m model) inputLayers() []inputLayer {
 	}
 
 	layers = append(layers, inputLayer{handle: handleRootQuitInput})
+	if m.remotePending != nil {
+		return append(layers, inputLayer{handle: handleRemotePreflightInput})
+	}
 	if m.busy != "" {
 		return append(layers, inputLayer{handle: handleBusyInput})
 	}

@@ -57,7 +57,7 @@ func TestFavoriteChangesPreserveOtherInstances(t *testing.T) {
 }
 
 func TestInvalidPreferencesRemainUntouched(t *testing.T) {
-	for _, raw := range []string{`{`, `{"version":2}`, `{"version":1,"unknown":true}`, `{"version":1} {}`, `{"version":1,"favorites":["api","api"]}`} {
+	for _, raw := range []string{`{`, `{"version":3}`, `{"version":1,"unknown":true}`, `{"version":1} {}`, `{"version":1,"favorites":["api","api"]}`} {
 		t.Run(raw, func(t *testing.T) {
 			s := &Store{Path: filepath.Join(t.TempDir(), "preferences.json")}
 			if err := os.WriteFile(s.Path, []byte(raw), 0o600); err != nil {

@@ -31,7 +31,7 @@ func (m *model) updateDetails() {
 	if m.details == nil {
 		return
 	}
-	if s, ok := m.sessionByName(m.details.session.Name); ok {
+	if s, ok := m.sessionByID(m.details.session.ID()); ok {
 		m.details.session = s
 		m.details.notice = ""
 	} else {
@@ -59,7 +59,10 @@ func (m *model) resizeNavigation() {
 			}
 			return sanitizeDisplay(s)
 		}
-		body := fmt.Sprintf("Name: %s\nStatus: %s\nDefault session: %t\nFavorite: %t\n\nSession state directory:\n%s\n\nSocket path:\n%s", field(d.session.Name), d.session.Status(), d.session.Default, m.preferences.Favorite(d.session.Name), field(d.session.SessionDir), field(d.session.SocketPath))
+		body := fmt.Sprintf("Name: %s\nStatus: %s\nDefault session: %t\nFavorite: %t\n\nSession state directory:\n%s\n\nSocket path:\n%s", field(d.session.Name), d.session.Status(), d.session.Default, m.preferences.FavoriteSession(d.session.ID()), field(d.session.SessionDir), field(d.session.SocketPath))
+		if d.session.Target != "" {
+			body = "Host: " + field(d.session.Target) + "\n" + body
+		}
 		d.viewport.SetContent(lipgloss.Wrap(body, max(1, width-4), ""))
 	}
 }

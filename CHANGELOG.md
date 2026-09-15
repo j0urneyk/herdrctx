@@ -4,6 +4,18 @@ User-visible changes are recorded here. Entries under Unreleased have not been p
 
 ## Unreleased
 
+### Added
+
+- Manage one SSH host's sessions with `--remote`: list, search, filter, favorite, inspect, attach, create, stop, and delete. Remote mode requires Herdr 0.8.2+ on both hosts; `n` uses the remote default directory and `N` reports that remote directory selection is unsupported.
+- Host-scoped remote favorites with a version 2 preferences format that preserves existing local favorites. Earlier herdrctx versions disable preferences when reading this format without overwriting it.
+- Remote stale-list revalidation and explicit unknown-outcome alerts when a stop/delete response is lost; mutation commands are never automatically replayed.
+- Opt-in local Docker/OpenSSH integration tests and a Linux SSH CI job, including connection loss, process persistence, response loss, and credential-safe failure diagnostics.
+
+### Fixed
+
+- Remote action checks wait for active list queries to finish, including cancellation and foreground-return refreshes, so SSH queries do not overlap or authorize actions from old responses.
+- Cancelling remote revalidation keeps the list marked as needing a fresh check, including when the preceding background refresh failed.
+
 ## v0.0.4 — 2026-09-09
 
 ### Added

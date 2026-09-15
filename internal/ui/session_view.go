@@ -29,7 +29,7 @@ func (m model) orderedSessions() []herdr.Session {
 		}
 	}
 	slices.SortFunc(visible, func(a, b herdr.Session) int {
-		af, bf := m.preferences.Favorite(a.Name), m.preferences.Favorite(b.Name)
+		af, bf := m.preferences.FavoriteSession(a.ID()), m.preferences.FavoriteSession(b.ID())
 		if af != bf {
 			if af {
 				return -1
@@ -55,5 +55,9 @@ func (m model) navigationSummary() string {
 	if m.runningFirst {
 		order = "Running first"
 	}
-	return fmt.Sprintf("Status: %s · Sort: %s · %d/%d sessions", m.filter, order, m.visibleSessionCount(), len(m.sessions))
+	summary := fmt.Sprintf("Status: %s · Sort: %s · %d/%d sessions", m.filter, order, m.visibleSessionCount(), len(m.sessions))
+	if m.remoteStale {
+		summary += " · last known values"
+	}
+	return summary
 }

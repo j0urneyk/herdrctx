@@ -25,6 +25,7 @@ const (
 )
 
 type newSessionForm struct {
+	remoteTarget            string
 	mode                    newSessionMode
 	active                  newSessionField
 	defaultDir              string
@@ -209,6 +210,9 @@ func (f *newSessionForm) submit() (newSessionSubmit, error) {
 		f.active = newSessionNameField
 		return newSessionSubmit{}, err
 	}
+	if f.remoteTarget != "" {
+		return newSessionSubmit{Name: name}, nil
+	}
 
 	dirInput := f.defaultDir
 	if f.withDir() {
@@ -233,6 +237,9 @@ func (f *newSessionForm) submit() (newSessionSubmit, error) {
 
 func (f newSessionForm) render(width int) string {
 	title := "New session"
+	if f.remoteTarget != "" {
+		title = "New session on " + sanitizeDisplay(f.remoteTarget)
+	}
 	if f.withDir() {
 		title = "New session in directory"
 	}
@@ -241,6 +248,9 @@ func (f newSessionForm) render(width int) string {
 	b.WriteString(titleStyle.Render(title))
 	b.WriteString("\n\n")
 	b.WriteString(textInputView(f.name))
+	if f.remoteTarget != "" {
+		b.WriteString("\nUses the remote default directory.")
+	}
 	if f.withDir() {
 		b.WriteString("\n")
 		b.WriteString(textInputView(f.dir))

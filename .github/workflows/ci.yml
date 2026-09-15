@@ -93,6 +93,35 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  remote:
+    name: Remote SSH (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test remote sessions over isolated local SSH
+        run: CGO_ENABLED=0 make test-integration-remote
+
+      - name: Preserve remote failure logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: herdr-remote-linux-amd64
+          path: dist/integration/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
   lint:
     name: Format and lint (Linux x86_64)
     runs-on: ubuntu-24.04

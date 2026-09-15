@@ -14,6 +14,7 @@ Select every applicable row. Update tests when behavior changes.
 | Session navigation, favorites, details, or preferences | Baseline checks and the [navigation PTY test](#navigation-through-a-pty). |
 | Session creation, attach/detach, stop, or delete | Baseline checks and the [real Herdr lifecycle test](#real-herdr-lifecycle). |
 | Plugin installer or manifest | Baseline checks and [installer fixtures](#installer-fixtures); registration changes also need [local registration](#local-registration-and-nested-guards). |
+| Remote CLI, UI, or SSH harness | Applicable checks above plus `make test-integration-remote`. |
 | Nested attach/create guards | Baseline checks, lifecycle, and local registration. The latter checks both environment signals, attach, and both creation shortcuts. |
 | Integration harness or CI | Baseline checks and the complete `make test-integration` suite. |
 | Release packaging or workflow | Baseline checks, applicable integration tests, and the [release guide](releases.md). Packaging changes also require a [snapshot build](releases.md#local-snapshot-builds). |
@@ -52,7 +53,7 @@ go test -tags=integration ./integration -count=1 -timeout=10m -v
 
 The tests require a native macOS or Linux host on x86_64 or arm64. The PTY harness uses [creack/pty](https://pkg.go.dev/github.com/creack/pty) as a test dependency; it is not linked into the shipped app. The installer tests exercise the actual shell installer, so its standard Unix tool requirements still apply. Python is not required.
 
-The [download helper](../integration/download_test.go) fetches missing Herdr binaries from official GitHub release assets and checks their pinned SHA-256 and version before installing them into the repository's `bin` directory. Existing cached binaries are checked too. It uses Herdr `0.6.5` at `bin/herdr-ci` for standalone compatibility and `0.7.0` at `bin/herdr-plugin-ci` for plugin registration. The normal Herdr installation is untouched. A download, digest, version, or execution failure fails the test rather than skipping it. Once dependencies and these two binaries are cached, the local suites do not require network access.
+The [download helper](../integration/download_test.go) fetches missing Herdr binaries from official GitHub release assets and checks their pinned SHA-256 and version before installing them into the repository's `bin` directory. Existing cached binaries are checked too. It uses Herdr `0.6.5` at `bin/herdr-ci` for standalone compatibility and `0.7.0` at `bin/herdr-plugin-ci` for plugin registration. The normal Herdr installation is untouched. A download, digest, version, or execution failure fails the test rather than skipping it. Once dependencies, these two Herdr binaries, and the pinned herdrctx v0.0.4 archive for mixed-version preferences tests are cached, the local suites do not require network access.
 
 Use Go's `-run` option to select a suite, through `INTEGRATION_ARGS`:
 
@@ -93,6 +94,12 @@ The six scenarios cover:
 Each test supplies an isolated HOME, XDG directories, preferences, session fixtures, and working directory. Temporary command wrappers invoke the Go test executable in fixture mode; no separate fixture runtime is needed. Tests observe state changes rather than retrying failed scenarios. Output may arrive in complete frames or small updates, and short-lived status messages may never be rendered before a refresh. Handoff checks therefore look for the restored list footer after the foreground command's output.
 
 The PTY harness inspects terminal output without reconstructing every screen cell. Keep model/rendering unit tests for layout assertions. Emitting an emoji sequence does not establish how each terminal/font will display it.
+
+### Remote navigation without Docker
+
+`TestRemoteNavigation` uses a fake SSH executable and the real herdrctx PTY. It runs in the ordinary integration suite without Docker or network access. Its query fixture takes a process lock and records any overlapping invocation. A controlled response gate checks waiting behind background refreshes, fresh revalidation after old responses, cancellation both while waiting and during an active check, and confirmation-time refresh failures. It also verifies modal input ownership, remote `N`, stopped attach opt-in, and both nested-environment signals.
+
+`TestMixedVersionPreferences` runs the published **herdrctx v0.0.4 binary** beside the current app against one isolated preferences file. Archive SHA-256 values are pinned for all four supported platforms. On first use the test downloads the archive into `bin`; it extracts only the binary into the scenario's temporary directory. It checks an already-running old app's save after v2 migration, an old app's startup against v2, preservation of local favorites, and continued saves/restart by the current app. This test needs network access only until the verified legacy archive is cached.
 
 ## Real Herdr lifecycle
 
@@ -151,6 +158,31 @@ Replace the placeholder with the reviewed ref. The public path installs `j0urney
 
 A local-link or installer-fixture pass cannot replace this post-publication check. See [plugin versions and publication](releases.md#plugin-versions-and-publication) for version eligibility and the early `v0.0.2` exception.
 
+## Remote SSH tests
+
+A separate local Docker engine provides disposable Linux SSH hosts; no external server or user SSH configuration is required. Docker/OrbStack on macOS and a local Unix-socket Docker engine on Linux are supported test setups. The host needs OpenSSH (`ssh` and `ssh-keygen`). A stopped or unavailable engine fails the explicitly selected suite. Ordinary `make test-integration` skips the remote tests before touching Docker.
+
+```sh
+make test-integration-remote
+```
+
+This builds the host herdrctx binary and two images from [integration/remote/Dockerfile](../integration/remote/Dockerfile), then runs `TestRemote*` with `-integration.remote`. The Debian base is digest-pinned. Linux Herdr assets for 0.8.2 and 0.9.0 are verified against embedded SHA-256 values; the Go harness separately verifies downloaded native clients and the container binaries. Dependencies require network access on first setup. Images and verified binaries are retained for reuse.
+
+The native Herdr contract runs against matching 0.8.2 and 0.9.0 clients/servers. The herdrctx lifecycle and fault tests use 0.8.2, the remote minimum. They verify create/detach/reattach, shell PID and output persistence, favorites and details, stop confirmation/cancellation, stopped attach protection, default-session deletion blocked before any SSH delete invocation, deletion, authentication/host-key failures, and missing remote PATH binaries. A loopback TCP proxy disconnects SSH without stopping Herdr; another fixture completes a stop but withholds its response to verify unknown-outcome reporting without replay.
+
+Each run creates a nonprivileged container user, fresh user/host SSH keys, a strict dedicated known_hosts file, random loopback ports, and isolated local/remote Herdr state. A Go test helper named `ssh` forwards to `/usr/bin/ssh` with an explicit test config, replacing any generated `-F` argument. This wrapper is test-only. The fixture disables Herdr's managed SSH config and OpenSSH agents/control-socket reuse, checks effective SSH settings, and records both management and native attach invocations. The app itself uses normal user OpenSSH configuration. User homes, credentials, source checkouts, and engine sockets are not mounted in test containers.
+
+Containers, proxy connections, keys, and temporary roots are removed by cleanup handlers; cleanup failures fail the suite. Image tags `herdrctx-remote-test:0.8.2` and `herdrctx-remote-test:0.9.0` remain as test caches. Failure artifacts under `dist/integration/remote-*` contain commands, PTY/SSH logs, hashes, current session JSON, and `cleanup.json`. Snapshot collection uses an allowlist and root-scoped reads, excludes symlinks/private-key content, and scans remote artifacts for generated private keys. `TestSnapshotExcludesKeysAndSymlinks` also exercises renamed key copies and preserved safe diagnostics without Docker.
+
+To select a scenario or deliberately verify cleanup after failure:
+
+```sh
+make test-integration-remote INTEGRATION_ARGS='-run ^TestRemoteLifecycle$'
+make test-integration-remote INTEGRATION_ARGS='-run ^TestRemoteLifecycle$ -integration.fail-after-attach'
+```
+
+The second command must fail with `Injected failure after remote attach`, retain diagnostics without keys, and record container removal in `cleanup.json`. It is a failure-path check, not a passing suite.
+
 ## Release-tag validation
 
 The release workflow uses a Go test to compare its tag with the quoted top-level version in `herdr-plugin.toml`:
@@ -172,13 +204,13 @@ The shared [ci.yml](../.github/workflows/ci.yml) runs for pull requests, pushes 
 | macOS x86_64 | `macos-15-intel` | `darwin/amd64` |
 | macOS arm64 | `macos-15` | `darwin/arm64` |
 
-Each native job verifies the host/target architecture, runs package tests and vet, and invokes `CGO_ENABLED=0 make test-integration`. It also checks the built binary's version/help output; an unversioned build must report `herdrctx dev`. A separate Linux job runs formatting and lint, including the integration source. The platform jobs do not cancel each other on failure. Public installation is a separate explicit check, and tag validation runs before publishing.
+Each native job verifies the host/target architecture, runs package tests and vet, and invokes `CGO_ENABLED=0 make test-integration`. It also checks the built binary's version/help output; an unversioned build must report `herdrctx dev`. A separate Linux job runs formatting and lint, including the integration source. Another Linux x86_64 job runs the local Docker SSH suite. The platform jobs do not cancel each other on failure. Public installation is a separate explicit check, and tag validation runs before publishing.
 
 Local results establish only what ran locally. Cross-compiling tests checks portability of the source, not runtime behavior on the other platforms. These checks do not establish compatibility with every Linux distribution, macOS version, terminal, or newer Herdr release.
 
 ## Results and failure diagnosis
 
-Each scenario prints an artifact directory under `dist/integration`: `navigation-*`, `lifecycle-*`, `plugin-*`, or `installer-*`. `result.json` records the test, Go/platform information, tested binary hash when available, attempted checks, and pass/fail status. PTY and CLI logs are saved during execution. Failures copy regular diagnostic files from the isolated root into `snapshot` before removal, bounded to 16 MiB per file and 64 MiB total. Lifecycle and local plugin scenarios additionally record cleanup outcomes.
+Each scenario prints an artifact directory under `dist/integration`: `navigation-*`, `lifecycle-*`, `plugin-*`, or `installer-*`. `result.json` records the test, Go/platform information, tested binary hash when available, attempted checks, and pass/fail status. PTY and CLI logs are saved during execution. Failures copy allowlisted regular diagnostic files from the isolated root into `snapshot` before removal, bounded to 16 MiB per file and 64 MiB total. Symlinks and files containing private-key markers are excluded. Lifecycle and local plugin scenarios additionally record cleanup outcomes.
 
 CI uploads this directory on failure as `herdr-integration-<os>-<arch>` for seven days. Setup or compilation errors may precede artifact creation, so preserve the Go test output too. Before a snapshot build, save any evidence still needed: GoReleaser's `--clean` removes `dist`.
 

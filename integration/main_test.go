@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -147,10 +148,26 @@ func (s *scenario) writeJSON(name string, value any) {
 
 func (s *scenario) snapshot() {
 	s.t.Helper()
+	root, err := os.OpenRoot(s.root)
+	if err != nil {
+		s.t.Errorf("open snapshot root: %v", err)
+		return
+	}
+	defer func() { _ = root.Close() }()
 	var total int64
-	err := filepath.WalkDir(s.root, func(path string, entry os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(s.root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		rel, err := filepath.Rel(s.root, path)
+		if err != nil {
+			return err
+		}
+		if rel != "." && !snapshotPathAllowed(rel) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if !entry.Type().IsRegular() {
 			return nil
@@ -162,15 +179,19 @@ func (s *scenario) snapshot() {
 		if info.Size() > 16<<20 || total+info.Size() > 64<<20 {
 			return nil
 		}
-		rel, err := filepath.Rel(s.root, path)
+		raw, err := root.ReadFile(rel)
 		if err != nil {
 			return err
+		}
+		if containsPrivateKey(raw) {
+			return nil
 		}
 		dest := filepath.Join(s.artifacts, "snapshot", rel)
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			return err
 		}
-		if err := copyFile(path, dest, 0o600); err != nil {
+		// #nosec G703 -- WalkDir yields contained paths and symlinks are excluded above.
+		if err := os.WriteFile(dest, raw, 0o600); err != nil {
 			return err
 		}
 		total += info.Size()
@@ -179,6 +200,20 @@ func (s *scenario) snapshot() {
 	if err != nil {
 		s.t.Errorf("snapshot diagnostics: %v", err)
 	}
+}
+
+func snapshotPathAllowed(path string) bool {
+	path = filepath.ToSlash(path)
+	for _, allowed := range []string{"config", "data", "state", "runtime", "work", "session-state", "checkout with spaces", "downloads", "installed bin", "sessions.json", "actions.jsonl", "urls.txt", "test-shell", "home/Library/Application Support/herdrctx", "home/.config/herdr"} {
+		if path == allowed || strings.HasPrefix(path, allowed+"/") || strings.HasPrefix(allowed, path+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPrivateKey(raw []byte) bool {
+	return bytes.Contains(raw, []byte("PRIVATE KEY-----"))
 }
 
 func (s *scenario) command(timeout time.Duration, binary string, args ...string) (string, error) {
@@ -267,6 +302,7 @@ func readFile(t *testing.T, path string) []byte {
 func writeFile(t *testing.T, path string, raw []byte, mode os.FileMode) {
 	t.Helper()
 	must(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	// #nosec G703 -- Fixtures choose these isolated paths; archive entry names are never used.
 	must(t, os.WriteFile(path, raw, mode))
 }
 

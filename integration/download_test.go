@@ -15,6 +15,18 @@ import (
 )
 
 var testDigests = map[string]map[string]string{
+	"0.8.2": {
+		"linux/amd64":  "976150a14d490c94b243ea2e1a7eb2dfb67f12e36b182db90936f6728e6aecf4",
+		"linux/arm64":  "f55610658e1c2e0d2aaef730b4b2ab885f7f8ba00285ab372bfb14f2e3d5b40d",
+		"darwin/amd64": "ab50262c8190cd7aa9056d249d255c08c328c3e8716de9cfa29db4f131b8e2c1",
+		"darwin/arm64": "a5d4f4d504d8b309c91f811050559300faba31258425f53c50852fc96f6ae574",
+	},
+	"0.9.0": {
+		"linux/amd64":  "4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f",
+		"linux/arm64":  "9c8db20fb7e7427b138d5367113f1621ffd319f2f65d6f009e2594029115f0d2",
+		"darwin/amd64": "d0c920b2a126a74809fa1491411c9a097a44786cac9c2ca51b818a995581cf16",
+		"darwin/arm64": "32b53df09872628059c789a69f02a6b8e29e14ddf26711421f3463f70c1aef17",
+	},
 	"0.6.5": {
 		"linux/amd64":  "70ef4ce425c0697901a26b6c07562faf0d7f54d8c6b6df542a95a9774760e2bf",
 		"linux/arm64":  "78d5e27b335ae656218f2a23d355e9ccab0db32dcd85bec91945eb9acd7d8669",
@@ -43,6 +55,9 @@ func (s *scenario) herdr(version, override string) string {
 	filename := "herdr-ci"
 	if version == "0.7.0" {
 		filename = "herdr-plugin-ci"
+	}
+	if version == "0.8.2" || version == "0.9.0" {
+		filename = "herdr-remote-" + version
 	}
 	path := filepath.Join(repo, "bin", filename)
 	target := runtime.GOOS + "/" + runtime.GOARCH

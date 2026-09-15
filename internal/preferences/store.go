@@ -14,15 +14,39 @@ import (
 )
 
 type Data struct {
-	Version   int      `json:"version"`
-	Favorites []string `json:"favorites"`
+	Version         int               `json:"version"`
+	Favorites       []string          `json:"favorites"`
+	RemoteFavorites []herdr.SessionID `json:"remote_favorites,omitempty"`
 }
 
 func Empty() Data                        { return Data{Version: 1, Favorites: []string{}} }
 func (d Data) Favorite(name string) bool { return slices.Contains(d.Favorites, name) }
+func (d Data) FavoriteSession(id herdr.SessionID) bool {
+	if id.Target == "" {
+		return d.Favorite(id.Name)
+	}
+	return slices.Contains(d.RemoteFavorites, id)
+}
+
 func (d Data) validate() error {
-	if d.Version != 1 {
+	if d.Version != 1 && d.Version != 2 {
 		return fmt.Errorf("unsupported preferences version %d", d.Version)
+	}
+	if d.Version == 1 && len(d.RemoteFavorites) > 0 {
+		return fmt.Errorf("remote favorites require preferences version 2")
+	}
+	seenRemote := map[herdr.SessionID]bool{}
+	for _, id := range d.RemoteFavorites {
+		if _, err := herdr.ParseRemoteTarget(id.Target); err != nil {
+			return err
+		}
+		if _, err := herdr.ValidateSessionName(id.Name); err != nil {
+			return err
+		}
+		if seenRemote[id] {
+			return fmt.Errorf("duplicate remote favorite %q on %q", id.Name, id.Target)
+		}
+		seenRemote[id] = true
 	}
 	seen := map[string]bool{}
 	for _, name := range d.Favorites {
@@ -73,6 +97,7 @@ func (s *Store) Load() (Data, error) {
 
 // Change carries only the edited item, preserving changes made by other instances.
 type Change struct {
+	Target       string
 	FavoriteName string
 	Favorite     bool
 }
@@ -92,9 +117,24 @@ func (s *Store) Apply(c Change) (Data, error) {
 		return Data{}, err
 	}
 	if c.FavoriteName != "" {
-		d.Favorites = slices.DeleteFunc(d.Favorites, func(n string) bool { return n == c.FavoriteName })
-		if c.Favorite {
-			d.Favorites = append(d.Favorites, c.FavoriteName)
+		if c.Target != "" {
+			if _, err := herdr.ParseRemoteTarget(c.Target); err != nil {
+				return Data{}, err
+			}
+			if _, err := herdr.ValidateSessionName(c.FavoriteName); err != nil {
+				return Data{}, err
+			}
+			d.Version = 2
+			id := herdr.SessionID{Target: c.Target, Name: c.FavoriteName}
+			d.RemoteFavorites = slices.DeleteFunc(d.RemoteFavorites, func(existing herdr.SessionID) bool { return existing == id })
+			if c.Favorite {
+				d.RemoteFavorites = append(d.RemoteFavorites, id)
+			}
+		} else {
+			d.Favorites = slices.DeleteFunc(d.Favorites, func(n string) bool { return n == c.FavoriteName })
+			if c.Favorite {
+				d.Favorites = append(d.Favorites, c.FavoriteName)
+			}
 		}
 	}
 

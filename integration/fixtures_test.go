@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 type session struct {
@@ -40,6 +41,29 @@ func (s *scenario) fixture(name string) string {
 func runHelper(mode string, args []string) int {
 	var err error
 	switch mode {
+	case "remote-herdr":
+		err = fixtureRemoteHerdr(args)
+	case "fake-ssh":
+		err = fixtureRemoteSSH(args)
+	case "ssh":
+		config := os.Getenv("FIXTURE_SSH_CONFIG")
+		if config == "" {
+			return 23
+		}
+		forward := []string{"/usr/bin/ssh", "-F", config}
+		for i := 0; i < len(args); i++ {
+			if args[i] == "-F" && i+1 < len(args) {
+				i++
+				continue
+			}
+			forward = append(forward, args[i])
+		}
+		if err := appendFile(os.Getenv("FIXTURE_SSH_LOG"), []byte(fmt.Sprintf("%q\n", forward))); err != nil {
+			return 23
+		}
+		env := slices.DeleteFunc(os.Environ(), func(s string) bool { return strings.HasPrefix(s, "HERDRCTX_TEST_HELPER=") })
+		// #nosec G204 G702 -- Test-only wrapper forwards to the fixed system SSH with an isolated config.
+		err = syscall.Exec("/usr/bin/ssh", forward, env)
 	case "herdr":
 		err = fixtureHerdr(args)
 	case "curl":

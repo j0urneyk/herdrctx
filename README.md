@@ -2,7 +2,7 @@
 
 [한국어](README.ko.md)
 
-`herdrctx` is a terminal UI for managing local [Herdr](https://herdr.dev/) sessions. Search and filter sessions, keep favorites at the top, and inspect full session details. Attach, create, stop, and delete sessions from one keyboard-driven list. The list refreshes every 3 seconds and returns when you detach from Herdr.
+`herdrctx` is a terminal UI for managing local or SSH-hosted [Herdr](https://herdr.dev/) sessions. Search and filter sessions, keep favorites at the top, and inspect full session details. Attach, create, stop, and delete sessions from one keyboard-driven list. The list refreshes every 3 seconds and returns when you detach from Herdr.
 
 ## Install
 
@@ -76,7 +76,7 @@ New session names must be 1–64 characters, start with an ASCII letter or numbe
 
 The list starts with all sessions in name order. Use `f` to cycle through all, running, and stopped sessions; `o` switches between name order and running first. The current conditions and matching count appear above the list. Status filters combine with search. `esc` in search clears only the search text. Filters and sorting survive refreshes and reset when the app restarts.
 
-Press `p` to mark the selected session with `⭐` and keep it above other matching sessions. The chosen sort applies within each group; favorites still have to match the current search and status filter. Favorites are saved by exact session name and survive deletion: a new session with the same name inherits the favorite. The default session still has its separate `*` marker.
+Press `p` to mark the selected session with `⭐` and keep it above other matching sessions. The chosen sort applies within each group; favorites still have to match the current search and status filter. Favorites are scoped to the local host or exact SSH target and saved by exact session name. They survive deletion: a new session with the same name inherits the favorite. The default session still has its separate `*` marker.
 
 Press `i` to see full session values. Use `↑` / `↓` or `PgUp` / `PgDn` to scroll, and `enter`, `esc`, or `q` to close. Details follow refreshes and indicate when a session disappears or a refresh fails. **Directory** and directory search refer to Herdr's session-state storage path, not the project's working directory.
 
@@ -104,6 +104,24 @@ Deleting removes the saved session state. Stop a running session before deleting
 `enter` / `a` only attaches to running sessions by default. Selecting a stopped session shows a warning without invoking Herdr. To allow starting and attaching to stopped sessions, run `herdrctx --allow-stopped-attach` or set `HERDRCTX_ALLOW_STOPPED_ATTACH=1`. Use `--allow-stopped-attach=false` to override that environment setting. The footer shows `start and attach` for a stopped session when enabled; no additional confirmation is shown.
 
 This setting applies to session-list attachment. `n` and `N` still create or reuse sessions, including restarting an existing stopped session with the same name. The guard uses the latest list status; a running session that stops between refresh and attach can still be restarted by Herdr.
+
+## Remote sessions
+
+Use Herdr 0.8.2 or newer on both machines and have OpenSSH (`ssh`) available locally. Prepare ordinary SSH access and ensure the remote `herdr` command is available to non-interactive SSH:
+
+```sh
+ssh workbox 'herdr --version'
+herdr --remote workbox
+herdrctx --remote workbox
+```
+
+Complete any initial authentication or Herdr setup in the foreground, then detach before starting herdrctx. You can also pass `user@host` or `ssh://user@host:2222`; use an SSH URL for IPv6. `--herdr-bin` selects the **local** Herdr binary. Management commands require `herdr` on the remote PATH even if native Herdr attach can discover an installation elsewhere.
+
+Remote mode shows one host's sessions, with the target in the header and stop/delete confirmations. Search, filters, sorting, favorites, details, and the existing stopped/nested attach policies apply. `n` creates or reuses a session in the remote default directory and attaches immediately. `N` shows an unsupported-operation notice in remote mode. Directory and socket values belong to the remote host. Running without `--remote` keeps the local behavior.
+
+Background SSH never answers authentication prompts or installs or restarts Herdr. Refresh failures keep the last known list. Attaching, stopping, or deleting from that list first rechecks the target, waiting for any active query to finish; `Esc` cancels this check. A lost response to stop/delete is shown as **Remote result unknown**: the operation may already have completed. herdrctx does not repeat it automatically; reconnect and check the current state before trying again.
+
+The first remote favorite save upgrades preferences to version 2 while preserving local favorites. Different SSH target spellings remain separate, even when they point to the same host. Earlier herdrctx versions cannot read version 2 and will disable preferences without overwriting them. New-version instances preserve each other's local and remote changes.
 
 ## Options
 
@@ -153,6 +171,8 @@ make test-integration
 ```
 
 Integration tests are Go tests behind the `integration` build tag. `make test-integration` builds the app and runs the local suites, downloading checksum-pinned Herdr test binaries on first use. To run one suite, use `make test-integration INTEGRATION_ARGS='-run ^TestNavigation$'`.
+
+To test remote sessions without an external server, run `make test-integration-remote` with a local Docker engine. See [remote SSH tests](docs/testing.md#remote-ssh-tests) for requirements and isolation.
 
 CI covers Ubuntu 24.04 and macOS 15 on both supported architectures. See the [testing guide](docs/testing.md) to choose checks for your change, including tests with real Herdr sessions, and the [release guide](docs/releases.md) for publishing and release builds.
 

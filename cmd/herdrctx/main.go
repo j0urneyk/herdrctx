@@ -51,6 +51,7 @@ func run() error {
 
 	interval := flags.Duration("interval", 3*time.Second, "session refresh interval (minimum 500ms)")
 	herdrBin := flags.String("herdr-bin", herdrBinDefault, "path to the herdr binary")
+	remote := flags.String("remote", "", "manage sessions on an SSH host (requires Herdr 0.8.2+ on both hosts)")
 	allowNested := flags.Bool("allow-nested", truthyEnv("HERDRCTX_ALLOW_NESTED"), "allow launching Herdr from inside Herdr")
 	allowStoppedAttach := flags.Bool("allow-stopped-attach", truthyEnv("HERDRCTX_ALLOW_STOPPED_ATTACH"), "allow attaching to stopped sessions (restarts them)")
 	completeHidden := flags.String("complete-hidden", completeHiddenDefault, "hidden directory completion mode: auto, always, or never")
@@ -95,6 +96,19 @@ func run() error {
 	if *herdrBin == "" {
 		return fmt.Errorf("--herdr-bin must not be empty")
 	}
+	var remoteTarget *herdr.RemoteTarget
+	remoteSet := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "remote" {
+			remoteSet = true
+		}
+	})
+	if remoteSet {
+		remoteTarget, err = herdr.ParseRemoteTarget(*remote)
+		if err != nil {
+			return fmt.Errorf("--remote: %w", err)
+		}
+	}
 	if os.Getenv("TERM") == "dumb" {
 		return fmt.Errorf("herdrctx needs an interactive terminal; TERM=dumb is not supported")
 	}
@@ -103,6 +117,7 @@ func run() error {
 	}
 
 	client := herdr.NewClient(*herdrBin)
+	client.Remote = remoteTarget
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := client.EnsureMinimumVersion(ctx); err != nil {
