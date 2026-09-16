@@ -34,6 +34,9 @@ func (m *model) updateDetails() {
 	if s, ok := m.sessionByID(m.details.session.ID()); ok {
 		m.details.session = s
 		m.details.notice = ""
+		if m.hosts != nil && m.hosts.entries[s.Target].stale {
+			m.details.notice = "Showing last known values; host needs revalidation."
+		}
 	} else {
 		m.details.notice = "Session no longer listed"
 	}

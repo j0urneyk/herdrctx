@@ -14,6 +14,7 @@ Select every applicable row. Update tests when behavior changes.
 | Session navigation, favorites, details, or preferences | Baseline checks and the [navigation PTY test](#navigation-through-a-pty). |
 | Session creation, attach/detach, stop, or delete | Baseline checks and the [real Herdr lifecycle test](#real-herdr-lifecycle). |
 | Plugin installer or manifest | Baseline checks and [installer fixtures](#installer-fixtures); registration changes also need [local registration](#local-registration-and-nested-guards). |
+| Host catalogs, host switching, combined lists, or machine import | Baseline checks, `TestHostsNavigation` through a PTY, and `make test-integration-remote`. |
 | Remote CLI, UI, or SSH harness | Applicable checks above plus `make test-integration-remote`. |
 | Nested attach/create guards | Baseline checks, lifecycle, and local registration. The latter checks both environment signals, attach, and both creation shortcuts. |
 | Integration harness or CI | Baseline checks and the complete `make test-integration` suite. |
@@ -183,6 +184,32 @@ make test-integration-remote INTEGRATION_ARGS='-run ^TestRemoteLifecycle$ -integ
 
 The second command must fail with `Injected failure after remote attach`, retain diagnostics without keys, and record container removal in `cleanup.json`. It is a failure-path check, not a passing suite.
 
+### Host navigation and expanded remote checks
+
+`TestHostsNavigation` runs without Docker using isolated fake SSH/Herdr commands. It covers same-name host selection and handoff, explicit creation destination, cancelled stop, machine conflict confirmation, and host registration. Host state/scheduling tests also check identity-preserving selection, the four-query limit, fair scheduling, stale state after cancellation, and generation rejection. Regression cases also cover queued action checks, delete preflight waiting for capacity, cancelled import conflicts, invalid-catalog visibility, and cursor-following host/profile menus. Hosts settings tests check locking, atomic updates, conflicts, and invalid-file preservation.
+
+The opt-in remote suite additionally runs `TestRemoteMultipleHosts` with two independent 0.9.0 Docker SSH hosts, same-name sessions, correct stop routing, partial connection failure, and real machine import. `TestRemoteMixedVersions` separates client/server versions: 0.8.2/0.9.0 mismatches request a matching remote binary. The test declines installation and verifies that the existing install remains; this is a verified incompatibility condition, not evidence that mismatched installations attach successfully. `TestRemoteDelayedTransport` adds per-write delay and a transport stall, checks bounded query failure, and restores connectivity without restarting Herdr. `TestRemoteJumpHost` checks management and native SSH through a separate Docker bastion with strict host keys and separate identities.
+
+Run the fake-host UI without Docker, or select the real host scenarios:
+
+```sh
+make test-integration INTEGRATION_ARGS='-run ^TestHostsNavigation$'
+make test-integration-remote INTEGRATION_ARGS='-run ^TestRemoteMultipleHosts$'
+make test-integration-remote INTEGRATION_ARGS='-run ^TestRemoteMixedVersions$'
+make test-integration-remote INTEGRATION_ARGS='-run ^TestRemoteDelayedTransport$'
+make test-integration-remote INTEGRATION_ARGS='-run ^TestRemoteJumpHost$'
+```
+
+For the two-host cleanup failure path, run:
+
+```sh
+make test-integration-remote INTEGRATION_ARGS='-run ^TestRemoteMultipleHosts$ -integration.fail-after-attach'
+```
+
+It must fail with `Injected failure with two remote hosts`, record both container removals, and retain no private keys. For SIGTERM verification, signal only the process created for this test after its `both hosts ready for cancellation` marker; preserve each scenario's cleanup and result files. Do not signal unrelated Herdr or Docker processes. New host/fake state diagnostics are included in the existing bounded snapshot allowlist.
+
+The September 15 implementation validation used macOS arm64 clients and Linux arm64 containers. The remaining native platforms, macOS SSH server, real WAN/MFA and enterprise policy environments require separate evidence. A host sshd executable alone does not establish an isolated macOS user/VM test environment. Do not enable system Remote Login or use personal SSH credentials to fill that gap. GitHub CI must be checked against the exact pushed SHA after publication is authorized.
+
 ## Release-tag validation
 
 The release workflow uses a Go test to compare its tag with the quoted top-level version in `herdr-plugin.toml`:
@@ -210,7 +237,7 @@ Local results establish only what ran locally. Cross-compiling tests checks port
 
 ## Results and failure diagnosis
 
-Each scenario prints an artifact directory under `dist/integration`: `navigation-*`, `lifecycle-*`, `plugin-*`, or `installer-*`. `result.json` records the test, Go/platform information, tested binary hash when available, attempted checks, and pass/fail status. PTY and CLI logs are saved during execution. Failures copy allowlisted regular diagnostic files from the isolated root into `snapshot` before removal, bounded to 16 MiB per file and 64 MiB total. Symlinks and files containing private-key markers are excluded. Lifecycle and local plugin scenarios additionally record cleanup outcomes.
+Each scenario prints an artifact directory under `dist/integration`, including `navigation-*`, `hosts-navigation-*`, `remote-navigation-*`, `remote-<version>-*`, `lifecycle-*`, `plugin-*`, and `installer-*`. `result.json` records the test, Go/platform information, tested binary hash when available, attempted checks, and pass/fail status. PTY and CLI logs are saved during execution. Failures copy allowlisted regular diagnostic files from the isolated root into `snapshot` before removal, bounded to 16 MiB per file and 64 MiB total. Symlinks and files containing private-key markers are excluded. Lifecycle and local plugin scenarios additionally record cleanup outcomes.
 
 CI uploads this directory on failure as `herdr-integration-<os>-<arch>` for seven days. Setup or compilation errors may precede artifact creation, so preserve the Go test output too. Before a snapshot build, save any evidence still needed: GoReleaser's `--clean` removes `dist`.
 

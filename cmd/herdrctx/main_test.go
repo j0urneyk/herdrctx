@@ -41,3 +41,12 @@ func TestRunRejectsInvalidRemoteBeforeTerminalSetup(t *testing.T) {
 		}
 	}
 }
+
+func TestRunRejectsConflictingHostModes(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	os.Args = []string{"herdrctx", "--all-hosts", "--remote", "workbox"}
+	if err := run(); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

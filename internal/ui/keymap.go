@@ -150,7 +150,7 @@ func (m model) sessionHelpKeys() keyMap {
 func (m model) helpView() string {
 	keys := m.sessionHelpKeys()
 	if m.help.ShowAll {
-		return m.help.FullHelpView(keys.FullHelp())
+		return m.help.FullHelpView(keys.FullHelp()) + "\nH hosts"
 	}
-	return m.help.ShortHelpView(keys.ShortHelp())
+	return m.help.ShortHelpView(keys.ShortHelp()) + " · H hosts"
 }

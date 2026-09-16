@@ -4,19 +4,19 @@ Use this guide when implementing or reviewing session actions, forms, feedback, 
 
 ## Session list and refresh
 
-The list loads at startup and refreshes every `3s` by default. The CLI accepts a different `--interval`, with a minimum of `500ms`. Automatic ticks start a request only when no list request or session action is in progress. Manual refresh (`r`) also avoids overlapping list requests. A dialog blocks background key input, but does not pause refresh messages.
+The list loads at startup and refreshes every `3s` by default. The CLI accepts a different `--interval`, with a minimum of `500ms`. In the initial single-host view, automatic ticks start a request only when no list request or session action is in progress. Host navigation uses the per-host queue described [below](#host-selection-and-combined-lists). Manual refresh (`r`) also avoids overlapping requests for the same host. A dialog blocks background key input; outstanding query results still arrive. Hosts and machine menus pause scheduled refreshes, while ordinary session dialogs do not.
 
-Keep the previous list on refresh failure and put the error in the status line. Successful refreshes preserve the selected session by name when it remains visible; otherwise the cursor stays within the remaining rows. Ignore stale responses from earlier refresh requests. After the initial loading screen, subsequent refreshes show a refreshing indicator only after `300ms`, avoiding flicker on quick refreshes.
+Keep the previous list on refresh failure and put the error in the status line. Successful refreshes preserve the selected session by host and name when it remains visible; otherwise the cursor stays within the remaining rows. Ignore stale responses from earlier refresh requests. In the initial single-host view, subsequent refreshes show a refreshing indicator only after `300ms`, avoiding flicker on quick refreshes. Host navigation instead reports each host's loading state and last successful query.
 
 Search filters the displayed list by a case-insensitive substring of the session name or Herdr's `session_dir` field. The **Directory** column and directory search use that session-state path, not the working directory entered when creating a session. Opening search with `/` starts editing; `tab` switches scope without clearing the query, `enter` keeps the filter, and `esc` clears it. Filters survive refreshes, and actions target the selected filtered row. Distinguish an empty session list from a filter with no matches.
 
 ## Filters, favorites, and details
 
-`f` cycles `All`, `Running`, and `Stopped`; `o` switches `Name` and `Running first`. Defaults are `All` and `Name`. These conditions survive refresh and terminal handoff but are not persisted. Apply status and existing search filters before sorting favorites first, then the chosen order within each group. Name comparisons ignore case with raw names as the tie-breaker. Never mutate the raw list. Show conditions and visible/total counts above the table. Search dismissal clears only search text.
+`f` cycles `All`, `Running`, and `Stopped`; `o` switches `Name` and `Running first`. Defaults are `All` and `Name`. These conditions survive refresh and terminal handoff but are not persisted. Apply status and existing search filters before sorting favorites first, then the chosen order within each group. Name comparisons ignore case, then compare raw names and exact host IDs to break ties. Never mutate the raw list. Show conditions and visible/total counts above the table. Search dismissal clears only search text.
 
-`p` toggles the selected exact name in saved favorites. Render `⭐` with emoji presentation selector U+FE0F (terminal/font support determines its appearance), separately from the default `*`, and move the row only after a successful save. Preserve selection by raw name. Missing or deleted sessions retain their favorite records without appearing as synthetic rows; a same-name replacement inherits the favorite.
+`p` toggles the selected host/name identity in saved favorites. Render `⭐` with emoji presentation selector U+FE0F (terminal/font support determines its appearance), separately from the default `*`, and move the row only after a successful save. Preserve selection by the full host/name identity. Missing or deleted sessions retain their favorite records without appearing as synthetic rows; a same-name replacement on the same host inherits the favorite.
 
-`i` opens a read-only detail overlay containing the name, status, default/favorite flags, session-state directory, and socket path. Empty paths show `Not available`. Wrap full values in a scrolling viewport and sanitize external display text. `↑/↓` and `PgUp/PgDn` scroll; `enter`, `esc`, or `q` closes the overlay. Keep the target name fixed, update it on successful refresh, and retain last-known values with a notice on disappearance or refresh failure. Details do not add session actions or infer a project working directory.
+`i` opens a read-only detail overlay containing the name, status, default/favorite flags, session-state directory, and socket path. Empty paths show `Not available`. Wrap full values in a scrolling viewport and sanitize external display text. `↑/↓` and `PgUp/PgDn` scroll; `enter`, `esc`, or `q` closes the overlay. Keep the target host and name fixed, update it on successful refresh, and retain last-known values with a notice on disappearance or refresh failure. Details do not add session actions or infer a project working directory.
 
 ## Saved preferences
 
@@ -49,13 +49,51 @@ An empty remote array may be omitted. The exact target spelling is the identity;
 
 ## Remote sessions
 
-`--remote <target>` fixes the host for the lifetime of the app. There is no host switcher or combined host list. Show the target in the header, details, creation form, and stop/delete confirmations. Native remote attach/create uses `herdr --remote <target> --session <name>` via `tea.ExecProcess`. Management uses non-interactive SSH with bounded connection and command timeouts and requires `herdr` on the remote PATH. The local binary and each remote list's reported version must meet the 0.8.2 remote minimum; local mode retains its 0.6.5 minimum.
+`--remote <target>` chooses the initial SSH host. `H` enables host navigation during the run, and `--all-hosts` explicitly starts in the combined view. Saved hosts alone never expand the initial connection scope. Show the target in the header, details, creation form, and stop/delete confirmations. Native remote attach/create uses `herdr --remote <target> --session <name>` via `tea.ExecProcess`. Management uses non-interactive SSH with bounded connection and command timeouts and requires `herdr` on the remote PATH. The local binary and each remote list's reported version must meet the 0.8.2 remote minimum; local mode retains its 0.6.5 minimum.
 
 Remote `n` validates the name and hands off immediately using the remote default directory. It performs no local directory resolution. Remote `N` opens a warning and does not open the directory form. Nested guards precede these flows. Socket equality implies the same containing session only in local mode.
 
-A failed remote refresh retains the list with a `last known values` indicator. An unknown mutation outcome also marks it stale. List-based attach/stop/delete from stale data or while a refresh is running first re-fetches the same host, keeping the original host/session identity fixed. A new check waits for the active query to exit before starting; its result is never authorized by the older query. Cancelling an active check keeps the query slot occupied until the command exits and leaves the list marked as needing revalidation until a new query succeeds. Refreshes requested on foreground return also wait for an active query and discard its old result. `Esc` cancels the check; other action and navigation keys are consumed, while quit remains available. Ignore late responses after cancellation and background lists started before the check. Recheck stopped/default/disappeared states against the result. A stale confirmation also rechecks on acceptance; delete still performs its final preflight. This does not make the list-and-action sequence atomic. Explicit `n` remains available for foreground setup.
+A failed remote refresh retains the list with a `last known values` indicator. An unknown mutation outcome also marks it stale. List-based attach/stop/delete from stale data or while a refresh is running first re-fetches the same host, keeping the original host/session identity fixed. A new check waits for the active query to exit before starting; its result is never authorized by the older query. Cancelling an active check keeps the query slot occupied until the command exits and leaves the list marked as needing revalidation until a new query succeeds. Refreshes requested on foreground return also wait for an active query. The initial single-host path discards that older result; host navigation queues a new query and requires action revalidation while it is queued or running. `Esc` cancels the check; other action and navigation keys are consumed, while quit remains available. Ignore late responses after cancellation and background lists started before the check. Recheck stopped/default/disappeared states against the result. A stale confirmation also rechecks on acceptance; delete still performs its final preflight. This does not make the list-and-action sequence atomic. Explicit `n` remains available for foreground setup.
 
 When a remote mutation's result cannot be established, show `Remote result unknown` with the target and session. A killed SSH client does not prove the remote operation was cancelled. Never replay mutations automatically. Refresh only reads current state and cannot establish which actor caused it. A new user-requested mutation must meet the normal conditions and confirmation requirements. Action errors remain alerts, list errors remain status messages, and successful refreshes do not dismiss an open alert.
+
+## Host selection and combined lists
+
+`H` opens Hosts from the root list. Opening this menu opts into host navigation for that run; saved hosts alone never cause an ordinary local or `--remote` launch to contact additional servers. `--all-hosts` explicitly starts with Local and every saved SSH host. It conflicts with `--remote`. `--hosts-file` selects a separate host settings file; otherwise use `hosts.json` beside `preferences.json` in the user configuration directory. An invalid file preserves its bytes, is reported when opening Hosts, and disables host edits; explicit `--all-hosts` fails startup. Local and the original `--remote` destination remain available for the run even if their saved metadata is removed.
+
+Hosts uses Up/Down and Enter to select one host (also the host filter), `A` to show all, `n` to add, `e` to edit, `d` to remove a saved host after `y`, and `i` to read machine profiles. Esc closes one layer. The host editor asks for label and SSH destination; Tab changes fields and Enter saves. Labels are 1–80 bytes, destinations use the existing validation rules, and duplicate labels/destinations are rejected. Editing a label preserves identity and profile metadata. Changing the SSH destination creates a different identity without migrating favorites. Host edits are rejected while any host query is active; retry after it finishes. Menus pause scheduled background refreshes, but in-flight/queued queries may finish and a successful save requests a refresh of the visible scope. Long menus show a cursor-following window of rows. Running actions, existing modals, creation forms, and preflight checks consume host-switch keys.
+
+### Host settings
+
+Host settings use version 1 with a `hosts` array. Each record has `label`, `destination`, and optional `profile_id` and `session`. Credentials remain in OpenSSH. Saves lock, reload, validate, and atomically replace the file, preserving other records and invalid files. Removing a host never stops/deletes sessions or prunes favorites. Preference v1/v2 remains unchanged.
+
+```json
+{
+  "version": 1,
+  "hosts": [
+    {"label": "Work", "destination": "workbox"},
+    {"label": "Build", "destination": "user@buildbox", "profile_id": "example-profile-id", "session": "api"}
+  ]
+}
+```
+
+A missing file is an empty catalog. Reject unknown fields/versions, invalid labels or SSH targets, invalid nonempty session names, duplicate labels/destinations, and duplicate nonempty profile IDs. The lock is `hosts.json.lock`; directory/file permissions and atomic replacement follow the preferences store. No credential fields are accepted. An ordinary launch can continue with local/the explicit remote target after a catalog error; `H` shows that error and disables saving for the run. Fix the file and restart to recover. `--hosts-file` overrides only the host catalog path, not favorites or OpenSSH configuration.
+
+Reload under the lock on each save, but do not continuously watch the catalog. Preserve other host records; replacing a host replaces that complete record. If another instance removes the edited destination, fail without writing and tell the user to restart to reload it. Manual JSON edits require closing the app.
+
+### Host query state
+
+In host navigation, the table's Directory column becomes Host; session-state directory remains available in details and directory search. Each row keeps the full host/session identity, including selection across refreshes and sorting ties. Status `?` means last-known data. The summary shows each visible host's last success, loading/failure state and session count; unknown hosts differ from a successful empty list, and incomplete results are marked Partial results. Search and status filtering still combine within the selected host scope.
+
+Each host owns an immutable client, cached list, freshness and generation/request IDs. Limit list queries to one per host and four overall, with a rotating queue. Delete preflight also waits for a free global query slot. A queued refresh also requires action preflight; an action waits for a query slot instead of trusting the cached row. Cancelled commands retain their slot until exit. Preflight and action callbacks keep their original host/session; changing views cannot redirect them. Foreground execution is singular and its return refreshes the original visible scope (host switching is blocked while it runs). Local minimum-version checks run before launching a newly selected remote host too.
+
+`n`/`N` in All hosts first asks for one creation host. It never infers a destination from a selected row. The chosen host is captured in the form. Local creation retains directory behavior; remote `n` uses the remote default directory and `N` remains unsupported.
+
+## Machine import
+
+Import uses only local `herdr machine list --json`, requiring Herdr 0.9.0+. The preview displays label, exact target, designated session, and enabled/disabled state. Disabled profiles cannot be imported, and the source `selected` flag never chooses or contacts a host. Import explicitly registers a host whose entire session inventory may be listed; the designated profile session and source ID remain metadata. Import never attaches or mutates Herdr's source catalog.
+
+Enter imports a new selected profile; `y` confirms a conflicting replacement. Esc/q dismisses the conflict first and clears its pending replacement target before another profile can be selected. Saving can trigger background refreshes for the registered host when All hosts is the visible scope. Repeated identical imports are a no-op. A matching source ID, destination, or label with changed metadata requires an explicit replacement confirmation; conflicts involving multiple saved records must be resolved in Hosts first. Removed source profiles do not remove saved hosts. Imported metadata is a snapshot, with no automatic synchronization. Normal attach guards apply when a user later selects a listed session.
 
 ## Attach and create
 
@@ -67,7 +105,7 @@ Block attach and both creation shortcuts before launching Herdr when `HERDR_ENV=
 
 ### Creation forms
 
-`n` asks for a name and uses the model's default directory, normally the directory where `herdrctx` started. That directory must exist. `N` adds an editable start-directory field, initially filled with the default directory. It rejects empty or whitespace-only input and creates missing directories before launching Herdr. A path that names a file, contains control characters, or cannot be accessed or created produces a form error.
+For a local destination, `n` asks for a name and uses the model's default directory, normally the directory where `herdrctx` started. That directory must exist. `N` adds an editable start-directory field, initially filled with the default directory. It rejects empty or whitespace-only input and creates missing directories before launching Herdr. A path that names a file, contains control characters, or cannot be accessed or created produces a form error.
 
 Relative paths resolve against the default directory. `~` and `~/...` expand to the user's home; paths are not evaluated by a shell. Preserve meaningful spaces in nonempty paths. Directories created by the `N` form are not rolled back if the subsequent Herdr launch fails.
 
@@ -89,7 +127,7 @@ Both actions require confirmation before the command runs. Stopping can terminat
 
 For stop, require a selected running session. For delete, require a selected, stopped, non-default session. Both actions reject the name `--json`, which Herdr interprets as a flag. Block default-session deletion before invoking Herdr. A running session must be stopped as a separate confirmed action; never combine stop and delete.
 
-The confirmation captures the session's name, so a refresh or cursor change cannot silently choose another target. On `y` or `enter`, recheck that target against the current model list. If it disappeared or no longer meets the conditions, show a warning and do not run the action. `n` or `esc` cancels.
+The confirmation captures the session's host and name, so a refresh or cursor change cannot silently choose another target. On `y` or `enter`, recheck that target against the current model list. If it disappeared or no longer meets the conditions, show a warning and do not run the action. `n` or `esc` cancels.
 
 Deletion also fetches `herdr session list --json` immediately before invoking `herdr session delete <name> --json`. If this fetch fails or the target is missing, default, or running, fail the action without invoking delete. This is an additional check, not an atomic lock on Herdr state. Stop invokes `herdr session stop <name> --json` after model revalidation.
 
@@ -107,6 +145,7 @@ Choose feedback by the operation that failed:
 | Preferences cannot be read at startup | One warning dialog; disable preference operations for that run |
 | A favorite save fails | Error dialog; retain the last valid preferences |
 | Name or directory validation fails while creating a session | Creation form, with the relevant field focused |
+| Host catalog errors, host-save failures, or machine-import errors | Hosts menu or host editor; preserve existing data. Explicit `--all-hosts` startup reports catalog errors and exits. |
 | Loading, action progress, successful completion, or return from Herdr | Status or summary line |
 
 Alerts explain a warning or error; they never authorize an action. A stop/delete confirmation remains a separate state. An automatic refresh may update status behind an alert, but the alert stays open until dismissed.
@@ -117,6 +156,10 @@ Route `ctrl+c` first so it quits from every TUI layer and cancels the model's co
 | --- | --- |
 | Alert dialog | `enter`, `esc`, or `q` closes it. Consume all other keys; do not send them to a form, confirmation, or table. |
 | Directory suggestions inside a creation form | Handle completion keys before the parent form. Pass ordinary text and `enter` to the form. |
+| Hosts menu | Up/Down or j/k selects; Enter chooses a host, A chooses all, n/e/d/i manages metadata. Esc/q closes the menu. A remove confirmation accepts y and cancels with n/Esc. |
+| Host editor | Tab changes fields, Enter saves, Esc returns to Hosts. Printable keys are text. |
+| Machine preview/replacement | Up/Down or j/k selects, Enter imports a new profile or opens a conflict confirmation. A conflict accepts y; Esc/q cancels that layer and clears its replacement target. |
+| Host save or machine read in progress | Consume menu keys until IO completes; ctrl+c can still quit. |
 | Session details | Scroll and close only; no background input. |
 | Pending preferences IO | Block new mutations and session actions, allowing root details/movement/help/quit. |
 | Creation form | `enter` submits and `esc` cancels after any suggestions close. Printable keys such as `q` are input, not global shortcuts. |
@@ -130,6 +173,8 @@ Render alerts, confirmations, and creation forms as overlays with the session li
 ## Where to change and verify behavior
 
 [model.go](../internal/ui/model.go) owns action state, refresh messages, and overlays; [input_layer.go](../internal/ui/input_layer.go) and [keymap.go](../internal/ui/keymap.go) own keyboard routing. Forms and suggestions live in [new_session.go](../internal/ui/new_session.go) and [path_completion.go](../internal/ui/path_completion.go). The [Herdr client](../internal/herdr/client.go), [name validation](../internal/herdr/types.go), [directory validation](../internal/herdr/path.go), and [environment detection](../internal/herdr/env.go) define the integration boundary.
+
+Host scheduling and catalog interaction live in [hosts.go](../internal/ui/hosts.go); [machines.go](../internal/ui/machines.go) owns the import preview and conflict state. [The host store](../internal/preferences/hosts.go) and [machine CLI adapter](../internal/herdr/machines.go) own their persistence and external command boundaries.
 
 Navigation lives in [session_view.go](../internal/ui/session_view.go) and [session_details.go](../internal/ui/session_details.go). [preferences.go](../internal/ui/preferences.go) connects asynchronous favorite storage to the UI. The [preferences store](../internal/preferences/store.go) owns persistence and preserves other instances' favorite changes.
 

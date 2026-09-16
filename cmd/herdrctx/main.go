@@ -51,6 +51,8 @@ func run() error {
 
 	interval := flags.Duration("interval", 3*time.Second, "session refresh interval (minimum 500ms)")
 	herdrBin := flags.String("herdr-bin", herdrBinDefault, "path to the herdr binary")
+	allHosts := flags.Bool("all-hosts", false, "show local and all explicitly saved SSH hosts")
+	hostsFile := flags.String("hosts-file", "", "path to host settings (default: user config directory/herdrctx/hosts.json)")
 	remote := flags.String("remote", "", "manage sessions on an SSH host (requires Herdr 0.8.2+ on both hosts)")
 	allowNested := flags.Bool("allow-nested", truthyEnv("HERDRCTX_ALLOW_NESTED"), "allow launching Herdr from inside Herdr")
 	allowStoppedAttach := flags.Bool("allow-stopped-attach", truthyEnv("HERDRCTX_ALLOW_STOPPED_ATTACH"), "allow attaching to stopped sessions (restarts them)")
@@ -103,6 +105,9 @@ func run() error {
 			remoteSet = true
 		}
 	})
+	if remoteSet && *allHosts {
+		return fmt.Errorf("--remote and --all-hosts cannot be combined")
+	}
 	if remoteSet {
 		remoteTarget, err = herdr.ParseRemoteTarget(*remote)
 		if err != nil {
@@ -124,8 +129,21 @@ func run() error {
 		return err
 	}
 
+	hostStore, hostErr := preferences.DefaultHostStore()
+	if *hostsFile != "" {
+		hostStore = &preferences.HostStore{Path: *hostsFile}
+		hostErr = nil
+	}
+	hostData := preferences.Hosts{Version: 1}
+	if hostErr == nil {
+		hostData, hostErr = hostStore.Load()
+	}
+	if *allHosts && hostErr != nil {
+		return fmt.Errorf("host settings: %w", hostErr)
+	}
 	store, storeErr := preferences.DefaultStore()
 	program := tea.NewProgram(ui.NewModel(ui.Options{
+		HostsStore: hostStore, HostsData: hostData, HostsError: hostErr, AllHosts: *allHosts,
 		PreferencesStore:     store,
 		PreferencesError:     storeErr,
 		Client:               client,

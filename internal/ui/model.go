@@ -35,6 +35,10 @@ const (
 
 // Options configures the TUI model.
 type Options struct {
+	HostsStore           *preferences.HostStore
+	HostsData            preferences.Hosts
+	HostsError           error
+	AllHosts             bool
 	PreferencesStore     *preferences.Store
 	PreferencesError     error
 	Client               *herdr.Client
@@ -52,6 +56,12 @@ type Options struct {
 }
 
 type model struct {
+	hostStore            *preferences.HostStore
+	hostData             preferences.Hosts
+	hostError            error
+	hosts                *hostCollection
+	hostMenu             *hostMenu
+	machineMenu          *machineMenu
 	filter               statusFilter
 	runningFirst         bool
 	preferences          preferences.Data
@@ -116,14 +126,16 @@ type sessionsLoadedMsg struct {
 }
 
 type actionFinishedMsg struct {
+	Target string
 	Action confirmAction
 	Name   string
 	Err    error
 }
 
 type attachFinishedMsg struct {
-	Name string
-	Err  error
+	Target string
+	Name   string
+	Err    error
 }
 
 // NewModel returns a Bubble Tea model for the Herdr sessions TUI.
@@ -166,6 +178,7 @@ func NewModel(opts Options) tea.Model {
 		ctx, cancel = context.WithCancel(ctx)
 	}
 	m := model{
+		hostStore: opts.HostsStore, hostData: opts.HostsData, hostError: opts.HostsError,
 		client:               client,
 		preferences:          preferences.Empty(),
 		preferencesStore:     opts.PreferencesStore,
@@ -192,12 +205,18 @@ func NewModel(opts Options) tea.Model {
 		statusKind:           statusInfo,
 	}
 	m.preferencesPending = opts.PreferencesStore != nil || opts.PreferencesError != nil
+	if opts.AllHosts {
+		m.initHosts(true)
+	}
 	m.configureTable()
 
 	return m
 }
 
 func (m model) Init() tea.Cmd {
+	if m.hosts != nil {
+		return tea.Batch(m.queueHostRefresh(), m.scheduleRefresh(), m.initialPreferencesCmd())
+	}
 	return tea.Batch(m.loadSessionsCmd(), m.scheduleRefresh(), m.spinner.Tick, m.initialPreferencesCmd())
 }
 
@@ -213,6 +232,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case hostLaunchMsg:
+		return m.handleHostLaunch(msg)
+	case hostLoadedMsg:
+		return m.handleHostLoaded(msg)
+	case hostsSavedMsg:
+		return m.handleHostsSaved(msg)
+	case machinesLoadedMsg:
+		return m.handleMachinesLoaded(msg)
 	case remotePreflightMsg:
 		return m.handleRemotePreflight(msg)
 	case preferencesLoadedMsg:
@@ -230,6 +257,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case refreshTickMsg:
+		if m.hosts != nil {
+			var cmd tea.Cmd
+			if m.busy == "" && m.hostMenu == nil && m.machineMenu == nil {
+				cmd = m.queueHostRefresh()
+			}
+			return m, tea.Batch(m.scheduleRefresh(), cmd)
+		}
 		cmds = append(cmds, m.scheduleRefresh())
 		if !m.loading && m.busy == "" {
 			cmds = append(cmds, m.startRefresh(), m.loadSessionsCmd(), m.spinner.Tick)
@@ -279,6 +313,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var unknown *herdr.OutcomeUnknownError
 			if errors.As(msg.Err, &unknown) {
 				m.remoteStale = true
+				if m.hosts != nil {
+					m.hosts.entries[msg.Target].stale = true
+				}
 				m.showDialog(dialogError, "Remote result unknown", unknown.Error())
 			} else {
 				m.showDialog(dialogError, fmt.Sprintf("%s failed", msg.Action), fmt.Sprintf("%s %q failed:\n\n%v", msg.Action, msg.Name, msg.Err))
@@ -385,7 +422,8 @@ func (m model) handleConfirmationKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	confirmed := *m.confirm
 	m.confirm = nil
-	if m.needsRemoteCheck() {
+	// The final delete read runs inside the action, so it needs a free query slot too.
+	if m.needsSessionCheck(confirmed.Session) || confirmed.Action == confirmDelete && m.hostQuerySlotsFull() {
 		return m.checkRemoteSession(confirmed.Session, string(confirmed.Action), true)
 	}
 	return m.executeConfirmation(confirmed)
@@ -430,13 +468,24 @@ func (m model) openNewSession(mode newSessionMode) (tea.Model, tea.Cmd) {
 		m.showDialog(dialogWarning, "Cannot create from inside Herdr", m.nestedHerdrCreateMessage())
 		return m, nil
 	}
-	if m.client.Remote != nil && mode == newSessionWithDir {
+	if m.activeTarget() == allHosts {
+		return m.openHosts(true, mode)
+	}
+	return m.openNewSessionOn(mode, m.activeTarget())
+}
+
+func (m model) openNewSessionOn(mode newSessionMode, target string) (tea.Model, tea.Cmd) {
+	if m.nestedHerdrBlocked() {
+		m.showDialog(dialogWarning, "Cannot create from inside Herdr", m.nestedHerdrCreateMessage())
+		return m, nil
+	}
+	if target != "" && mode == newSessionWithDir {
 		m.showDialog(dialogWarning, "Remote directory creation unavailable", "Use n to create and attach in the remote default directory. Choosing a remote directory with N is not supported.")
 		return m, nil
 	}
 
 	form, cmd := newSessionFormModel(mode, m.defaultDir, m.width, m.completeHidden, m.completeVisibleCount)
-	form.remoteTarget = m.client.TargetID()
+	form.remoteTarget = target
 	m.newSession = &form
 	m.configureTable()
 	m.setStatus("Create a new session and attach immediately.", statusInfo)
@@ -459,7 +508,7 @@ func (m model) submitNewSession() (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	m.newSession = &form
-	cmd, err := m.client.CreateAttachCommand(submission.Name, submission.Dir)
+	cmd, err := m.clientFor(form.remoteTarget).CreateAttachCommand(submission.Name, submission.Dir)
 	if err != nil {
 		m.newSession.setError(err)
 		m.newSession.closeCompletion()
@@ -470,8 +519,11 @@ func (m model) submitNewSession() (tea.Model, tea.Cmd) {
 	m.setStatus(fmt.Sprintf("Creating and attaching to %q…", submission.Name), statusInfo)
 	m.configureTable()
 
+	if m.hosts != nil {
+		return m, m.prepareHostLaunch(cmd, form.remoteTarget, submission.Name)
+	}
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return attachFinishedMsg{Name: submission.Name, Err: err}
+		return attachFinishedMsg{Target: form.remoteTarget, Name: submission.Name, Err: err}
 	})
 }
 
@@ -489,14 +541,14 @@ func (m model) attachSession(session herdr.Session) (tea.Model, tea.Cmd) {
 		m.showDialog(dialogWarning, "Cannot attach from inside Herdr", m.nestedHerdrAttachMessage(session.Name, session.SocketPath))
 		return m, nil
 	}
-	if m.needsRemoteCheck() {
+	if m.needsSessionCheck(session) {
 		return m.checkRemoteSession(session, "attach", false)
 	}
 	if !session.Running && !m.allowStoppedAttach {
 		m.showDialog(dialogWarning, "Stopped session attach disabled", fmt.Sprintf("%q is stopped. Attaching would restart it.\n\nTo allow this, restart herdrctx with --allow-stopped-attach or HERDRCTX_ALLOW_STOPPED_ATTACH=1.", session.Name))
 		return m, nil
 	}
-	cmd, err := m.client.AttachCommand(session.Name)
+	cmd, err := m.clientFor(session.Target).AttachCommand(session.Name)
 	if err != nil {
 		m.showDialog(dialogWarning, "Session cannot be attached", fmt.Sprintf("%q cannot be attached:\n\n%v", session.Name, err))
 		return m, nil
@@ -505,8 +557,11 @@ func (m model) attachSession(session herdr.Session) (tea.Model, tea.Cmd) {
 	m.busy = fmt.Sprintf("attach %q", session.Name)
 	m.setStatus(fmt.Sprintf("Attaching to %q…", session.Name), statusInfo)
 
+	if m.hosts != nil {
+		return m, m.prepareHostLaunch(cmd, session.Target, session.Name)
+	}
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return attachFinishedMsg{Name: session.Name, Err: err}
+		return attachFinishedMsg{Target: session.Target, Name: session.Name, Err: err}
 	})
 }
 
@@ -532,7 +587,7 @@ func (m model) confirmStop() (tea.Model, tea.Cmd) {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before stopping it.")
 		return m, nil
 	}
-	if m.needsRemoteCheck() {
+	if m.needsSessionCheck(session) {
 		return m.checkRemoteSession(session, "stop", false)
 	}
 	if !session.Running {
@@ -554,7 +609,7 @@ func (m model) confirmDelete() (tea.Model, tea.Cmd) {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before deleting it.")
 		return m, nil
 	}
-	if m.needsRemoteCheck() {
+	if m.needsSessionCheck(session) {
 		return m.checkRemoteSession(session, "delete", false)
 	}
 	if session.Default {
@@ -642,32 +697,34 @@ func (m model) visibleSessionCount() int {
 }
 
 func (m model) runActionCmd(confirmed confirmation) tea.Cmd {
+	client := m.clientFor(confirmed.Session.Target)
 	return func() tea.Msg {
 		var err error
 		ctx := m.ctx
 		switch confirmed.Action {
 		case confirmStop:
-			err = m.client.StopSession(ctx, confirmed.Session.Name)
+			err = client.StopSession(ctx, confirmed.Session.Name)
 		case confirmDelete:
-			err = m.validateCurrentDeleteTarget(ctx, confirmed.Session.Name)
+			err = m.validateDeleteTarget(ctx, client, confirmed.Session.ID())
 			if err == nil {
-				err = m.client.DeleteSession(ctx, confirmed.Session.Name)
+				err = client.DeleteSession(ctx, confirmed.Session.Name)
 			}
 		default:
 			err = fmt.Errorf("unknown action %q", confirmed.Action)
 		}
 
-		return actionFinishedMsg{Action: confirmed.Action, Name: confirmed.Session.Name, Err: err}
+		return actionFinishedMsg{Target: confirmed.Session.Target, Action: confirmed.Action, Name: confirmed.Session.Name, Err: err}
 	}
 }
 
-func (m model) validateCurrentDeleteTarget(ctx context.Context, name string) error {
-	sessions, err := m.client.ListSessions(ctx)
+func (m model) validateDeleteTarget(ctx context.Context, client *herdr.Client, id herdr.SessionID) error {
+	name := id.Name
+	sessions, err := client.ListSessions(ctx)
 	if err != nil {
 		return fmt.Errorf("refresh session before delete: %w", err)
 	}
 
-	session, ok := sessionByName(sessions, name)
+	session, ok := sessionByIdentity(sessions, id)
 	if !ok {
 		return fmt.Errorf("%q is no longer in the session list", name)
 	}
@@ -695,6 +752,10 @@ func (m *model) configureTablePreserving(selectedName string, oldCursor int) {
 		width = 100
 	}
 
+	dirTitle := "Directory"
+	if m.hosts != nil {
+		dirTitle = "Host"
+	}
 	tableWidth := max(40, width-2)
 	nameWidth := 24
 	statusWidth := 9
@@ -713,7 +774,7 @@ func (m *model) configureTablePreserving(selectedName string, oldCursor int) {
 	m.table.SetColumns([]table.Column{
 		{Title: "Name", Width: nameWidth},
 		{Title: "Status", Width: statusWidth},
-		{Title: "Directory", Width: dirWidth},
+		{Title: dirTitle, Width: dirWidth},
 		{Title: "Socket", Width: socketWidth},
 	})
 	m.table.SetWidth(tableWidth)
@@ -738,7 +799,7 @@ func (m model) selectedSessionSnapshot() (string, int) {
 	oldCursor := m.table.Cursor()
 	selectedName := ""
 	if selected, ok := m.selectedSession(); ok {
-		selectedName = selected.Name
+		selectedName = sessionSelectionKey(selected)
 	}
 
 	return selectedName, oldCursor
@@ -763,7 +824,7 @@ func selectedCursorForVisibleSessions(visible []herdr.Session, selectedName stri
 	cursor := oldCursor
 	if selectedName != "" {
 		for i, session := range visible {
-			if session.Name == selectedName {
+			if sessionSelectionKey(session) == selectedName {
 				cursor = i
 				break
 			}
@@ -836,13 +897,19 @@ func (m model) selectedSession() (herdr.Session, bool) {
 	return visible[cursor], true
 }
 
-func sessionByName(sessions []herdr.Session, name string) (herdr.Session, bool) {
-	for _, session := range sessions {
-		if session.Name == name {
-			return session, true
+func sessionSelectionKey(s herdr.Session) string {
+	if s.Target == "" {
+		return s.Name
+	}
+	return s.Target + "\x00" + s.Name
+}
+
+func sessionByIdentity(sessions []herdr.Session, id herdr.SessionID) (herdr.Session, bool) {
+	for _, s := range sessions {
+		if s.ID() == id {
+			return s, true
 		}
 	}
-
 	return herdr.Session{}, false
 }
 
@@ -874,7 +941,9 @@ func (m model) render() string {
 	var b strings.Builder
 
 	title := "herdrctx"
-	if m.client.Remote != nil {
+	if m.hosts != nil {
+		title += " · " + hostName(m.hosts.active)
+	} else if m.client.Remote != nil {
 		title += " · " + sanitizeDisplay(m.client.TargetID())
 	}
 	if m.version != "" && m.version != "dev" {
@@ -894,6 +963,8 @@ func (m model) render() string {
 
 	visible := m.visibleSessions()
 	switch {
+	case m.hosts != nil && len(visible) == 0 && !m.search.hasQuery() && m.filter == filterAll:
+		b.WriteString(warningStyle.Render("No sessions available in this host view. Check host status above.") + "\n")
 	case len(m.sessions) == 0 && m.loading:
 		b.WriteString(m.spinner.View())
 		b.WriteString(" Loading sessions…\n")
@@ -931,6 +1002,12 @@ func (m model) overlayView() string {
 	}
 	if m.dialog != nil {
 		return m.dialog.render(m.width)
+	}
+	if m.machineMenu != nil {
+		return m.machineMenuView()
+	}
+	if m.hostMenu != nil {
+		return m.hostMenuView()
 	}
 	if m.confirm != nil {
 		return m.confirmView()

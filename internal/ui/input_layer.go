@@ -35,6 +35,12 @@ func (m model) inputLayers() []inputLayer {
 		return append(layers, inputLayer{handle: handleDialogInput})
 	}
 
+	if m.machineMenu != nil {
+		return append(layers, inputLayer{handle: handleMachinesInput})
+	}
+	if m.hostMenu != nil {
+		return append(layers, inputLayer{handle: handleHostsInput})
+	}
 	if m.details != nil {
 		return append(layers, inputLayer{handle: handleDetailsInput})
 	}
@@ -150,6 +156,10 @@ func handleSearchInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 }
 
 func handleRootInput(m model, msg tea.KeyPressMsg) inputLayerResult {
+	if msg.String() == "H" {
+		next, cmd := m.openHosts(false, newSessionQuick)
+		return inputConsumed(next.(model), cmd)
+	}
 	switch {
 	case key.Matches(msg, m.keys.Filter):
 		name, cursor := m.selectedSessionSnapshot()
@@ -184,6 +194,9 @@ func handleRootInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 		m.configureTablePreserving(selectedName, oldCursor)
 		return inputConsumed(m, cmd)
 	case key.Matches(msg, m.keys.Refresh):
+		if m.hosts != nil {
+			return inputConsumed(m, m.queueHostRefresh())
+		}
 		if m.loading {
 			m.setStatus("Refresh already in progress.", statusInfo)
 			return inputConsumed(m, nil)

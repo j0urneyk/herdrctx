@@ -21,6 +21,9 @@ func (f statusFilter) String() string { return [...]string{"All", "Running", "St
 func (m model) orderedSessions() []herdr.Session {
 	visible := make([]herdr.Session, 0, len(m.sessions))
 	for _, s := range m.sessions {
+		if !m.hostVisible(s.Target) {
+			continue
+		}
 		if m.filter == filterRunning && !s.Running || m.filter == filterStopped && s.Running {
 			continue
 		}
@@ -45,7 +48,10 @@ func (m model) orderedSessions() []herdr.Session {
 		if c := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); c != 0 {
 			return c
 		}
-		return cmp.Compare(a.Name, b.Name)
+		if c := cmp.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Target, b.Target)
 	})
 	return visible
 }
@@ -56,7 +62,9 @@ func (m model) navigationSummary() string {
 		order = "Running first"
 	}
 	summary := fmt.Sprintf("Status: %s · Sort: %s · %d/%d sessions", m.filter, order, m.visibleSessionCount(), len(m.sessions))
-	if m.remoteStale {
+	if m.hosts != nil {
+		summary += " · " + m.hostSummary()
+	} else if m.remoteStale {
 		summary += " · last known values"
 	}
 	return summary

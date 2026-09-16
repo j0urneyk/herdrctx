@@ -41,6 +41,10 @@ func (s *scenario) fixture(name string) string {
 func runHelper(mode string, args []string) int {
 	var err error
 	switch mode {
+	case "fleet-herdr":
+		err = fixtureFleetHerdr(args)
+	case "fleet-ssh":
+		err = fixtureFleetSSH(args)
 	case "remote-herdr":
 		err = fixtureRemoteHerdr(args)
 	case "fake-ssh":

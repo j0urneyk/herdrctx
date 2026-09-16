@@ -2,7 +2,7 @@
 
 ## Project overview
 
-`herdrctx` is a Go terminal UI for managing local Herdr sessions or one explicit SSH host's sessions. It lists and filters sessions, refreshes them automatically, and lets users attach, stop, delete, and create sessions from one keyboard-driven screen. Favorites and full session details support navigation.
+`herdrctx` is a Go terminal UI for managing local Herdr sessions and explicitly selected SSH hosts, including combined lists. It lists and filters sessions, refreshes them automatically, and lets users attach, stop, delete, and create sessions from one keyboard-driven screen. Favorites and full session details support navigation.
 
 Keep the project name, command, module, documentation, and release artifacts aligned with `herdrctx`.
 
@@ -23,7 +23,7 @@ Use the Herdr CLI as the integration boundary:
 - Delete with `herdr session delete --json`.
 - Create and attach with `herdr --session <name>`.
 
-These launch commands describe local mode. With `--remote <target>`, run management commands through non-interactive OpenSSH on that target and attach/create using the local `herdr --remote <target> --session <name>`. Remote mode requires Herdr 0.8.2 or newer on both hosts and `herdr` on the remote non-interactive PATH. Preserve host identity in actions and preferences; do not implement Herdr's server protocol.
+These launch commands describe local mode. With `--remote <target>`, run management commands through non-interactive OpenSSH on that target and attach/create using the local `herdr --remote <target> --session <name>`. Remote mode requires Herdr 0.8.2 or newer on both hosts and `herdr` on the remote non-interactive PATH. Use H for explicit host selection and --all-hosts for an explicit combined view. Keep hosts.json separate from preferences and never connect to saved hosts merely because the catalog exists. Preserve host identity in selection, actions, and preferences; do not implement Herdr's server protocol.
 
 Background remote commands must not answer prompts or install/restart servers. A lost mutation response is an unknown outcome, not proof of cancellation; never replay it automatically. Revalidate stale remote lists before list-based actions. Keep stop/delete confirmation and deletion preflight on the same host and session.
 

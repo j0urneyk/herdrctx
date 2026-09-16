@@ -27,6 +27,9 @@ type remotePreflightMsg struct {
 func (m model) needsRemoteCheck() bool { return m.client.Remote != nil && (m.remoteStale || m.loading) }
 
 func (m model) checkRemoteSession(s herdr.Session, action string, confirmed bool) (tea.Model, tea.Cmd) {
+	if m.hosts != nil {
+		return m.checkHostSession(s, action, confirmed)
+	}
 	m.remoteRequestID++
 	ctx, cancel := context.WithCancel(m.ctx)
 	pending := &remotePreflight{ID: m.remoteRequestID, Session: s.ID(), Action: action, Confirmed: confirmed, Cancel: cancel, Context: ctx, Waiting: m.loading}
@@ -105,6 +108,9 @@ func (m model) handleRemotePreflight(msg remotePreflightMsg) (tea.Model, tea.Cmd
 }
 
 func (m *model) reloadAfterAction() tea.Cmd {
+	if m.hosts != nil {
+		return m.queueHostRefresh()
+	}
 	if m.client.Remote != nil && m.loading {
 		m.remoteRefreshQueued = true
 		return nil

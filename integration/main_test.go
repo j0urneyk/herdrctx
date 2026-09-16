@@ -204,7 +204,7 @@ func (s *scenario) snapshot() {
 
 func snapshotPathAllowed(path string) bool {
 	path = filepath.ToSlash(path)
-	for _, allowed := range []string{"config", "data", "state", "runtime", "work", "session-state", "checkout with spaces", "downloads", "installed bin", "sessions.json", "actions.jsonl", "urls.txt", "test-shell", "home/Library/Application Support/herdrctx", "home/.config/herdr"} {
+	for _, allowed := range []string{"config", "data", "state", "runtime", "work", "session-state", "checkout with spaces", "downloads", "installed bin", "hosts.json", "remote-state.json", "remote-actions.jsonl", "queries.log", "overlap.log", "sessions.json", "actions.jsonl", "urls.txt", "test-shell", "home/Library/Application Support/herdrctx", "home/.config/herdr"} {
 		if path == allowed || strings.HasPrefix(path, allowed+"/") || strings.HasPrefix(allowed, path+"/") {
 			return true
 		}

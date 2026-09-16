@@ -104,6 +104,16 @@ func (m model) navigationRows(sessions []herdr.Session, cursor int) []table.Row 
 			}
 		}
 	}
+	if m.hosts != nil {
+		for i, s := range sessions {
+			status := s.Status()
+			if h := m.hosts.entries[s.Target]; h != nil && h.stale {
+				status += " ?"
+			}
+			rows[i][1] = displayCell(status, columnWidth(m.table.Columns(), 1))
+			rows[i][2] = displayCell(hostName(s.Target), columnWidth(m.table.Columns(), 2))
+		}
+	}
 	return rows
 }
 

@@ -54,8 +54,9 @@ Select a running session with `↑` / `↓` and press `enter` to attach. To crea
 | `o` | Switch between name order and running first |
 | `p` | Toggle the selected session's favorite status |
 | `i` | Show full session details |
-| `n` | Create a session in the current directory and attach |
-| `N` | Choose a directory, create a session, and attach |
+| `H` | Open host selection and saved-host management |
+| `n` | Create/reuse a session and attach; ask for a host in the combined view |
+| `N` | Choose a local directory and attach; unavailable for remote hosts |
 | `s` | Stop the selected session, after confirmation |
 | `d` | Delete the selected session, after confirmation |
 | `r` | Refresh the list |
@@ -68,7 +69,7 @@ Close warning and error dialogs with `enter`, `esc`, or `q`. `ctrl+c` quits even
 
 Press `/` and type part of a session name to filter the list. While searching, `tab` switches between names and directory paths. Press `enter` to keep the filter and close the search field, or `esc` to clear it.
 
-When creating a session with `N`, you must enter a directory. Missing directories are created for you. Use `↑` / `↓` to move between fields or browse directory suggestions, and `tab` to accept a suggestion. `esc` closes the suggestions first; press it again to cancel the form.
+When creating a local session with `N`, you must enter a directory. Missing directories are created for you. Use `↑` / `↓` to move between fields or browse directory suggestions, and `tab` to accept a suggestion. `esc` closes the suggestions first; press it again to cancel the form.
 
 New session names must be 1–64 characters, start with an ASCII letter or number, and contain only ASCII letters, numbers, `-`, `_`, or `.`. The name `help` is reserved. Existing sessions remain visible even if their names do not meet the creation rules.
 
@@ -117,11 +118,27 @@ herdrctx --remote workbox
 
 Complete any initial authentication or Herdr setup in the foreground, then detach before starting herdrctx. You can also pass `user@host` or `ssh://user@host:2222`; use an SSH URL for IPv6. `--herdr-bin` selects the **local** Herdr binary. Management commands require `herdr` on the remote PATH even if native Herdr attach can discover an installation elsewhere.
 
-Remote mode shows one host's sessions, with the target in the header and stop/delete confirmations. Search, filters, sorting, favorites, details, and the existing stopped/nested attach policies apply. `n` creates or reuses a session in the remote default directory and attaches immediately. `N` shows an unsupported-operation notice in remote mode. Directory and socket values belong to the remote host. Running without `--remote` keeps the local behavior.
+`--remote <target>` initially shows that host's sessions, with the target in the header and stop/delete confirmations. Search, filters, sorting, favorites, details, and the existing stopped/nested attach policies apply. `n` creates or reuses a session in the remote default directory and attaches immediately. `N` shows an unsupported-operation notice in remote mode. Directory and socket values belong to the remote host. Running without `--remote` or `--all-hosts` starts locally. Use `H` to select another host or a combined view during the run.
 
 Background SSH never answers authentication prompts or installs or restarts Herdr. Refresh failures keep the last known list. Attaching, stopping, or deleting from that list first rechecks the target, waiting for any active query to finish; `Esc` cancels this check. A lost response to stop/delete is shown as **Remote result unknown**: the operation may already have completed. herdrctx does not repeat it automatically; reconnect and check the current state before trying again.
 
 The first remote favorite save upgrades preferences to version 2 while preserving local favorites. Different SSH target spellings remain separate, even when they point to the same host. Earlier herdrctx versions cannot read version 2 and will disable preferences without overwriting them. New-version instances preserve each other's local and remote changes.
+
+### Multiple hosts
+
+Press `H` to open Hosts, then select a host with Up/Down and Enter. `A` shows all saved hosts plus Local. In this menu, `n` adds a label and SSH destination, `e` edits, `d` removes saved metadata after confirmation, and `i` imports Herdr machine profiles. Tab switches editor fields; Esc closes the current layer. Removing a host preserves its sessions and favorites. Host navigation shows a Host column; state directories remain available in details and search.
+
+Start directly in the combined view with `herdrctx --all-hosts`. Use `--hosts-file /path/to/hosts.json` to override the host catalog beside your preferences file. `--all-hosts` and `--remote` are mutually exclusive. Ordinary local and single-remote launches do not connect to other saved hosts until you select them. In the combined view, `n` and `N` ask for a creation host first.
+
+Hosts are stored separately from favorites in `hosts.json`, in the same configuration directory shown [above](#saved-preferences). You can change a host's label without changing its favorites. Changing its SSH destination creates a different identity; favorites are not moved automatically. Local and the original `--remote` target remain available for the current run even if their saved entry is removed.
+
+If the host file is invalid, `H` displays the error and disables host edits; `--all-hosts` fails startup. Fix the file and restart. External edits are not watched; each save reloads the file to preserve other hosts. Close herdrctx before manually editing JSON. See the [host settings format](docs/ui.md#host-settings) for a complete example.
+
+Each host refreshes independently, with at most four list queries overall. Partial failures keep that host's last-known list and do not hide successful hosts. `Partial results` and `?` beside a session status indicate data that needs revalidation. Host selection also filters the combined list; existing search/status filters still apply.
+
+Machine import requires **local Herdr 0.9.0+** and previews the target and designated session before registering the host. Disabled profiles are rejected. Select a profile with Enter; a changed or conflicting record asks for `y` before replacement, and Esc cancels it. Import registers the whole host; the designated session is retained as metadata, not as a restriction on the session list. Import copies metadata, does not attach or edit Herdr's catalog, and does not automatically follow later profile changes. The combined view includes registered hosts in its background refreshes.
+
+The tested mixed 0.8.2/0.9.0 pairs require a remote binary matching the native client's version before creating a remote session. Complete any installation prompt directly in Herdr; herdrctx never approves it in background commands.
 
 ## Options
 
