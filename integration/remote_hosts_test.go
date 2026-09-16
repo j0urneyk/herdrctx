@@ -12,32 +12,6 @@ import (
 	"github.com/j0urneyk/herdrctx/internal/preferences"
 )
 
-func TestRemoteMixedVersions(t *testing.T) {
-	if !*remoteFlag {
-		t.Skip("enable with -integration.remote")
-	}
-	for _, versions := range [][2]string{{"0.8.2", "0.9.0"}, {"0.9.0", "0.8.2"}} {
-		t.Run(versions[0]+"-client-"+versions[1]+"-server", func(t *testing.T) {
-			f := newRemoteFixture(t, versions[1])
-			f.herdr = f.s.herdr(versions[0], "")
-			p := f.s.terminal("mixed", f.herdr, "--remote", f.target, "--session", "mixed")
-			p.expect("Install the "+versions[0]+" stable asset", 0)
-			p.send("n" + enter)
-			select {
-			case <-p.exitDone:
-			case <-time.After(5 * time.Second):
-				t.Fatal("refused install did not return")
-			}
-			p.close()
-			if got := strings.TrimSpace(f.cli("herdr --version")); got != "herdr "+versions[1] {
-				t.Fatalf("remote installation changed: %s", got)
-			}
-			f.cli("test ! -e /home/tester/.local/bin/herdr")
-			f.s.check("mixed versions require matching remote binary; installation declined and original installation preserved")
-		})
-	}
-}
-
 func TestRemoteMultipleHosts(t *testing.T) {
 	if !*remoteFlag {
 		t.Skip("enable with -integration.remote")

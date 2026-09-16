@@ -52,6 +52,19 @@ func (s *scenario) herdr(version, override string) string {
 		s.metadata["herdr"] = got
 		return path
 	}
+	path := s.herdrAsset(version, runtime.GOOS+"/"+runtime.GOARCH)
+	got := strings.TrimSpace(s.cli(path, "--version"))
+	if got != "herdr "+version {
+		s.t.Fatalf("expected Herdr %s, got %q", version, got)
+	}
+	s.metadata["herdr"] = got
+	s.metadata["herdr_sha256"] = testDigests[version][runtime.GOOS+"/"+runtime.GOARCH]
+	return path
+}
+
+// Foreign assets are hash-checked here and version-checked when executed on the SSH host.
+func (s *scenario) herdrAsset(version, target string) string {
+	s.t.Helper()
 	filename := "herdr-ci"
 	if version == "0.7.0" {
 		filename = "herdr-plugin-ci"
@@ -59,16 +72,19 @@ func (s *scenario) herdr(version, override string) string {
 	if version == "0.8.2" || version == "0.9.0" {
 		filename = "herdr-remote-" + version
 	}
+	if target != runtime.GOOS+"/"+runtime.GOARCH {
+		filename = "herdr-remote-" + strings.ReplaceAll(target, "/", "-") + "-" + version
+	}
 	path := filepath.Join(repo, "bin", filename)
-	target := runtime.GOOS + "/" + runtime.GOARCH
 	expected := testDigests[version][target]
 	if expected == "" {
 		s.t.Fatalf("unsupported Herdr test target %s", target)
 	}
-	// #nosec G304 -- This is one of the two fixed binary cache paths in the repository.
+	// #nosec G304 -- Version and platform are validated against the pinned digest table.
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		asset := "herdr-" + map[string]string{"darwin": "macos", "linux": "linux"}[runtime.GOOS] + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+		osName, arch, _ := strings.Cut(target, "/")
+		asset := "herdr-" + map[string]string{"darwin": "macos", "linux": "linux"}[osName] + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[arch]
 		url := "https://github.com/herdrdev/herdr/releases/download/v" + version + "/" + asset
 		s.t.Logf("Downloading Herdr %s for %s", version, target)
 		raw, err = download(suiteContext, url)
@@ -88,9 +104,6 @@ func (s *scenario) herdr(version, override string) string {
 		must(s.t, err)
 		// #nosec G302 G703 -- Make only our verified temporary download executable.
 		must(s.t, os.Chmod(temp.Name(), 0o700))
-		if got := strings.TrimSpace(s.cli(temp.Name(), "--version")); got != "herdr "+version {
-			s.t.Fatalf("unexpected downloaded binary %q", got)
-		}
 		// #nosec G703 -- Both paths belong to the fixed test binary cache.
 		must(s.t, os.Rename(temp.Name(), path))
 	} else {
@@ -99,12 +112,6 @@ func (s *scenario) herdr(version, override string) string {
 			s.t.Fatalf("cached Herdr %s has an unexpected SHA-256: %s", version, path)
 		}
 	}
-	got := strings.TrimSpace(s.cli(path, "--version"))
-	if got != "herdr "+version {
-		s.t.Fatalf("expected Herdr %s, got %q", version, got)
-	}
-	s.metadata["herdr"] = got
-	s.metadata["herdr_sha256"] = expected
 	return path
 }
 

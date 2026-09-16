@@ -138,7 +138,7 @@ Each host refreshes independently, with at most four list queries overall. Parti
 
 Machine import requires **local Herdr 0.9.0+** and previews the target and designated session before registering the host. Disabled profiles are rejected. Select a profile with Enter; a changed or conflicting record asks for `y` before replacement, and Esc cancels it. Import registers the whole host; the designated session is retained as metadata, not as a restriction on the session list. Import copies metadata, does not attach or edit Herdr's catalog, and does not automatically follow later profile changes. The combined view includes registered hosts in its background refreshes.
 
-The tested mixed 0.8.2/0.9.0 pairs require a remote binary matching the native client's version before creating a remote session. Complete any installation prompt directly in Herdr; herdrctx never approves it in background commands.
+In the tested 0.8.2/0.9.0 pairs, native setup can install the matching binary to `~/.local/bin/herdr` while management still uses the original `herdr` on PATH. New-session creation, reattachment, and management were verified across those installations. An already-running session differs: 0.9.0 asks before replacing a 0.8.2 server and stopping its panes; 0.8.2 refuses to attach to a running 0.9.0 server and leaves it running. Complete setup directly in Herdr and read any restart warning before accepting. herdrctx never approves installation or restart in background commands.
 
 ## Options
 

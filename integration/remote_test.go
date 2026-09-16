@@ -249,7 +249,15 @@ func TestRemoteLifecycle(t *testing.T) {
 	if !*remoteFlag {
 		t.Skip("enable with -integration.remote")
 	}
-	f := newRemoteFixture(t, "0.8.2")
+	for _, version := range []string{"0.8.2", "0.9.0"} {
+		t.Run(version, func(t *testing.T) { testRemoteLifecycle(t, version) })
+	}
+}
+
+func testRemoteLifecycle(t *testing.T, version string) {
+	f := newRemoteFixture(t, version)
+	f.useVersionClient(version)
+	delete(f.s.env, "HERDR_REMOTE_BINARY")
 	s := f.s
 	name := "remote-api"
 	p := s.terminal("herdrctx-remote", repoPath(*binaryFlag), "--herdr-bin", f.herdr, "--remote", f.target, "--interval", "500ms")
@@ -291,6 +299,7 @@ func TestRemoteLifecycle(t *testing.T) {
 			t.Fatalf("shell changed from %s to %s", pid, current)
 		}
 		pid = current
+		f.recordVersionServer(version, pid, "/usr/local/bin/herdr")
 		if *failAfterAttachFlag {
 			t.Fatal("Injected failure after remote attach")
 		}

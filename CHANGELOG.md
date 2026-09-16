@@ -13,6 +13,10 @@ User-visible changes are recorded here. Entries under Unreleased have not been p
 - Remote stale-list revalidation and explicit unknown-outcome alerts when a stop/delete response is lost; mutation commands are never automatically replayed.
 - Opt-in local Docker/OpenSSH integration tests and a Linux SSH CI job, including connection loss, process persistence, response loss, and credential-safe failure diagnostics.
 
+### Changed
+
+- Clarify tested Herdr 0.8.2/0.9.0 installation and restart behavior, including original PATH management after native installation and the running-server compatibility limits.
+
 ### Fixed
 
 - Queued host refreshes and deletion preflight respect the shared query limit before authorizing session actions.
