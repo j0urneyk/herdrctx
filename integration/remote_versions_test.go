@@ -3,8 +3,11 @@
 package integration
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +20,7 @@ func TestRemoteMixedVersions(t *testing.T) {
 		t.Skip("enable with -integration.remote")
 	}
 	for _, pair := range [][2]string{{"0.8.2", "0.9.0"}, {"0.9.0", "0.8.2"}} {
-		for _, mode := range []string{"management", "release-decline", "decline", "accept", "running", "failure", "cancel"} {
+		for _, mode := range []string{"management", "default-decline", "decline", "accept", "running", "failure", "cancel"} {
 			t.Run(pair[0]+"-client-"+pair[1]+"-server/"+mode, func(t *testing.T) {
 				f := newRemoteFixture(t, pair[1])
 				sentinel := f.seedVersionSession("sentinel", f.herdr)
@@ -27,7 +30,7 @@ func TestRemoteMixedVersions(t *testing.T) {
 					previous = f.seedVersionSession(name, f.herdr)
 				}
 				f.useVersionClient(pair[0])
-				if mode == "release-decline" {
+				if mode == "default-decline" {
 					delete(f.s.env, "HERDR_REMOTE_BINARY")
 				}
 				original := f.versionFingerprint()
@@ -37,6 +40,7 @@ func TestRemoteMixedVersions(t *testing.T) {
 					f.installTransferFault(mode)
 				}
 				p := f.s.terminal("mixed-app", repoPath(*binaryFlag), "--herdr-bin", f.herdr, "--remote", f.target, "--interval", "500ms")
+				appExited := false
 				p.expect(fmt.Sprintf("Loaded %d session(s).", len(f.sessions())), 0)
 				if mode == "management" {
 					p.send("/" + name + enter)
@@ -63,20 +67,25 @@ func TestRemoteMixedVersions(t *testing.T) {
 				} else {
 					p.sendExpect("n", "Uses the remote default directory.")
 					p.send(name + enter)
-					if mode == "release-decline" {
-						p.expect("Install the "+pair[0]+" stable asset", 0)
+					if mode == "default-decline" {
+						prompt := "Install the " + pair[0] + " stable asset"
+						if runtime.GOOS+"/"+runtime.GOARCH == f.s.metadata["remote_platform"] {
+							prompt = "Install the current local herdr binary"
+						}
+						p.expect(prompt, 0)
 					} else {
 						p.expect("Install HERDR_REMOTE_BINARY", 0)
 					}
 				}
 				switch mode {
-				case "decline", "release-decline":
+				case "decline", "default-decline":
 					p.sendExpect("n"+enter, "Attach failed")
 					f.assertVersionUnchanged(original)
 					f.cli("test ! -e /home/tester/.local/bin/herdr")
 					f.assertNoVersionSession(name)
 					p.send(enter)
 				case "failure", "cancel":
+					offset := p.offset()
 					p.send("y" + enter)
 					f.s.wait("install transfer reached fault gate", func() bool {
 						_, err := f.s.command(3*time.Second, f.ssh, f.target, "test -s /home/tester/install-transfer")
@@ -84,12 +93,13 @@ func TestRemoteMixedVersions(t *testing.T) {
 					})
 					if mode == "cancel" {
 						p.send("\x03")
+						appExited = p.waitInstallCancellation(offset)
+					} else {
+						p.expect("Attach failed", offset)
 					}
-					p.expect("Attach failed", 0)
-					if mode == "cancel" {
-						p.expect("signal: interrupt", 0)
+					if !appExited {
+						p.send(enter)
 					}
-					p.send(enter)
 					f.assertVersionUnchanged(original)
 					f.checkInstalledAsset(pair[1])
 					f.assertNoVersionSession(name)
@@ -146,11 +156,45 @@ func TestRemoteMixedVersions(t *testing.T) {
 				}
 				f.assertVersionSession("sentinel", sentinel)
 				f.assertVersionUnchanged(original)
-				p.quit()
+				if !appExited {
+					p.quit()
+				}
 				f.s.check("mixed version management and foreground result verified; unrelated original-version session preserved")
 			})
 		}
 	}
+}
+
+func (p *terminal) waitInstallCancellation(start int) bool {
+	p.s.t.Helper()
+	exited := false
+	// SIGINT can reach Bubble Tea after it resumes from the foreground Herdr command.
+	p.s.wait("installation cancellation result", func() bool {
+		select {
+		case <-p.exitDone:
+			select {
+			case <-p.readDone:
+				exited = true
+				return true
+			default:
+				return false
+			}
+		default:
+			output := p.textSince(start)
+			return strings.Contains(output, "Attach failed") && strings.Contains(output, "signal: interrupt")
+		}
+	})
+	if exited {
+		var exitErr *exec.ExitError
+		if !errors.As(p.exitErr, &exitErr) || exitErr.ExitCode() != 1 || !strings.Contains(p.textSince(start), "program was killed: program was interrupted") {
+			p.s.t.Fatalf("unexpected installation cancellation exit: %v\n%s", p.exitErr, p.textSince(start))
+		}
+		p.s.metadata["install_cancellation_result"] = "app interrupted"
+		p.close()
+	} else {
+		p.s.metadata["install_cancellation_result"] = "attach interrupted; app resumed"
+	}
+	return exited
 }
 
 func (f *remoteFixture) useVersionClient(version string) {
