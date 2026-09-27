@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"syscall"
@@ -31,6 +32,34 @@ exit 2
 	}
 	if len(sessions) != 1 || sessions[0].Name != "work" || sessions[0].Running {
 		t.Fatalf("unexpected sessions: %#v", sessions)
+	}
+}
+
+func TestClientListsAgentsForNamedRunningSession(t *testing.T) {
+	client := NewClient(fakeHerdr(t, `
+if [ "$1" = "--session" ] && [ "$2" = "work" ] && [ "$3" = "agent" ] && [ "$4" = "list" ]; then
+  printf '{"result":{"agents":[{"name":"review","agent_status":"blocked","target":"w1:p2"}]}}'
+  exit 0
+fi
+exit 2
+`))
+	agents, err := client.ListAgentsForSession(context.Background(), "work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 || agents[0].State != "blocked" {
+		t.Fatalf("agents = %#v", agents)
+	}
+}
+
+func TestFocusAgentCommandSelectsSessionAndTarget(t *testing.T) {
+	cmd, err := NewClient("herdr").FocusAgentForSessionCommand("work", "w1:p2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"herdr", "--session", "work", "agent", "focus", "w1:p2"}
+	if !reflect.DeepEqual(cmd.Args, want) {
+		t.Fatalf("args = %#v, want %#v", cmd.Args, want)
 	}
 }
 

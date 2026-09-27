@@ -43,9 +43,26 @@ var (
 			BorderForeground(lipgloss.Color("#8aadf4")).
 			Padding(0, 1)
 
+	agentNameStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#c6a0f6"))
+	workingAgentStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#8bd5ca"))
+	needsInputAgentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f5a97f")).Bold(true)
+
 	stoppedSessionRowStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#d8b76e"))
 )
+
+func agentStatusStyle(state string) lipgloss.Style {
+	switch state {
+	case "blocked":
+		return needsInputAgentStyle
+	case "working":
+		return workingAgentStyle
+	case "done":
+		return successStyle
+	default:
+		return subtleStyle
+	}
+}
 
 func tableStyles() table.Styles {
 	styles := table.DefaultStyles()

@@ -12,6 +12,7 @@ Select every applicable row. Update tests when behavior changes.
 | --- | --- |
 | Go source, dependencies, or build configuration | Run the four [baseline Go checks](#baseline-go-checks). |
 | Session navigation, favorites, details, or preferences | Baseline checks and the [navigation PTY test](#navigation-through-a-pty). |
+| Local agent child rows and attach/focus | Baseline checks, the navigation PTY test, and `TestSessionAgentPicker` through the PTY harness. |
 | Session creation, attach/detach, stop, or delete | Baseline checks and the [real Herdr lifecycle test](#real-herdr-lifecycle). |
 | Plugin installer or manifest | Baseline checks and [installer fixtures](#installer-fixtures); registration changes also need [local registration](#local-registration-and-nested-guards). |
 | Host catalogs, host switching, combined lists, or machine import | Baseline checks, `TestHostsNavigation` through a PTY, and `make test-integration-remote`. |

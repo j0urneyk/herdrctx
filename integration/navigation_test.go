@@ -215,3 +215,35 @@ func TestNavigation(t *testing.T) {
 	s.metadata["actions"] = actions()
 	s.metadata["terminal_sizes"] = []string{"160x40", "120x36", "60x20"}
 }
+
+func TestSessionAgentPicker(t *testing.T) {
+	s := newScenario(t, "session-agents")
+	herdr := s.fixture("herdr")
+	statePath := filepath.Join(s.root, "sessions.json")
+	makeSession := func(name string, running bool) session {
+		dir := filepath.Join(s.root, "session-state", name)
+		return session{Name: name, Running: running, SessionDir: dir, SocketPath: filepath.Join(dir, "herdr.sock")}
+	}
+	atomicJSON(t, statePath, sessionList{Sessions: []session{makeSession("running", true), makeSession("stopped", false)}})
+	p := s.terminal("agent-picker", repoPath(*binaryFlag), "--herdr-bin", herdr, "--interval", "3s")
+	p.expect("Loaded 2 session(s).", 0)
+	p.expect("codex: review", 0)
+	p.expect("needs in", 0)
+	p.expect("herdrctx", 0)
+	p.expect("Approve picker changes", 0)
+	// Child is the second flattened row. Enter uses the parent session, returns, then focuses its pane.
+	p.send(down + enter)
+	p.expect("NAVIGATION_ATTACH_HANDOFF", 0)
+	p.expect("NAVIGATION_AGENT_FOCUSED", 0)
+	// A stopped parent has no agent child; listing it would make the fake fail.
+	p.send("q")
+	p.waitExit()
+	var actions []invocation
+	for _, line := range strings.Split(strings.TrimSpace(string(readFile(t, filepath.Join(s.root, "actions.jsonl")))), "\n") {
+		actions = append(actions, decodeJSON[invocation](t, line))
+	}
+	if len(actions) < 2 || !slices.Equal(actions[0].Args, []string{"session", "attach", "running"}) || !slices.Equal(actions[1].Args, []string{"--session", "running", "agent", "focus", "w1:p2"}) {
+		t.Fatalf("agent attach/focus calls = %#v", actions)
+	}
+	s.check("local agent status, child attach and focus, stopped session untouched")
+}

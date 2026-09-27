@@ -103,6 +103,34 @@ func (c *Client) ListSessions(ctx context.Context) ([]Session, error) {
 	return ParseSessions(stdout)
 }
 
+// ListAgentsForSession lists current agents without attaching to the session.
+// The caller must only invoke it when the session is already known to be running.
+func (c *Client) ListAgentsForSession(ctx context.Context, sessionName string) ([]Agent, error) {
+	if c.Remote != nil {
+		return nil, fmt.Errorf("agent status is read-only and unavailable for remote sessions")
+	}
+	if _, err := ValidateSessionName(sessionName); err != nil {
+		return nil, err
+	}
+	stdout, err := c.runWithOutputLimit(ctx, maxSessionListOutputBytes, "--session", sessionName, "agent", "list")
+	if err != nil {
+		return nil, err
+	}
+	return ParseAgents(stdout)
+}
+
+// FocusAgentForSessionCommand targets one agent in a named session.
+func (c *Client) FocusAgentForSessionCommand(sessionName, target string) (*exec.Cmd, error) {
+	if _, err := ValidateSessionName(sessionName); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(target) == "" {
+		return nil, fmt.Errorf("agent target is required")
+	}
+	// #nosec G204 -- Values are passed as separate CLI arguments; session is validated and target is a Herdr pane ID.
+	return exec.Command(c.Bin, "--session", sessionName, "agent", "focus", target), nil
+}
+
 // StopSession stops a running Herdr session.
 func (c *Client) StopSession(ctx context.Context, name string) error {
 	name, err := ValidateSessionName(name)

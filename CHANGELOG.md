@@ -6,6 +6,7 @@ User-visible changes are recorded here. Entries under Unreleased have not been p
 
 ### Added
 
+- Live local agent child rows in the session picker, including `needs input` status and attach-then-focus behavior. Stopped sessions are never started for inspection; remote agent status remains read-only/unavailable through the non-interactive management bridge.
 - Explicit host switching with `H`, combined local/SSH lists with `--all-hosts`, and a separate editable host catalog selected with `--hosts-file`. Per-host refresh state keeps partial results available with up to four concurrent list queries. Combined creation asks for its destination.
 - Read-only Herdr 0.9.0+ machine import with a profile preview, duplicate/conflict handling, and preserved designated-session metadata.
 - Manage one SSH host's sessions with `--remote`: list, search, filter, favorite, inspect, attach, create, stop, and delete. Remote mode requires Herdr 0.8.2+ on both hosts; `n` uses the remote default directory and `N` reports that remote directory selection is unsupported.
@@ -14,6 +15,10 @@ User-visible changes are recorded here. Entries under Unreleased have not been p
 - Opt-in local Docker/OpenSSH integration tests and a Linux SSH CI job, including connection loss, process persistence, response loss, and credential-safe failure diagnostics.
 
 ### Changed
+
+- Color session/agent names and live statuses, highlighting `needs input` in bold orange while retaining status text and a readable selection highlight.
+
+- Show agent names, project directory names, and reported titles in the picker instead of storage/socket paths and workspace/pane IDs. Keep raw session paths in details; document that Herdr can report idle while a question is pending.
 
 - Clarify tested Herdr 0.8.2/0.9.0 installation and restart behavior, including original PATH management after native installation and the running-server compatibility limits.
 

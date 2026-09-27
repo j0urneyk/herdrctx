@@ -113,6 +113,19 @@ func fixtureHerdr(args []string) error {
 		_, err := os.Stdout.Write(raw)
 		return err
 	}
+	if len(args) == 4 && args[0] == "--session" && args[2] == "agent" && args[3] == "list" {
+		for _, item := range state.Sessions {
+			if item.Name == args[1] && item.Running {
+				if item.Name == "running" {
+					fmt.Println(`{"result":{"agents":[{"name":"review","agent":"codex","agent_status":"blocked","foreground_cwd":"/projects/herdrctx","title":"Approve picker changes","workspace_id":"w1","pane_id":"w1:p2"}]}}`)
+				} else {
+					fmt.Println(`{"result":{"agents":[]}}`)
+				}
+				return nil
+			}
+		}
+		return fmt.Errorf("agent inspection attempted for stopped or missing session %q", args[1])
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -126,6 +139,10 @@ func fixtureHerdr(args []string) error {
 	}
 	if len(args) == 3 && slices.Equal(args[:2], []string{"session", "attach"}) {
 		fmt.Println("NAVIGATION_ATTACH_HANDOFF")
+		return nil
+	}
+	if len(args) == 5 && args[0] == "--session" && args[2] == "agent" && args[3] == "focus" {
+		fmt.Println("NAVIGATION_AGENT_FOCUSED")
 		return nil
 	}
 	return fmt.Errorf("unexpected session action: %q", args)

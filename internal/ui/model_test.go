@@ -255,7 +255,7 @@ func TestSearchBarRendersAboveSessionList(t *testing.T) {
 
 	view := m.render()
 	searchIndex := strings.Index(view, "Search name:")
-	tableIndex := strings.Index(view, "Directory")
+	tableIndex := strings.Index(view, "Project")
 	if searchIndex < 0 {
 		t.Fatalf("render() missing search bar:\n%s", view)
 	}
@@ -1375,7 +1375,7 @@ func TestDialogRendersAsOverlay(t *testing.T) {
 	m.showDialog(dialogWarning, "Warning", "Something happened.")
 
 	view := m.render()
-	if !strings.Contains(view, "Directory") {
+	if !strings.Contains(view, "Project") {
 		t.Fatalf("dialog overlay should preserve the table behind it:\n%s", view)
 	}
 	if !strings.Contains(view, "Warning") {
@@ -1426,7 +1426,7 @@ func TestConfirmationRendersAsOverlay(t *testing.T) {
 			}
 
 			view := got.render()
-			if !strings.Contains(view, "Directory") {
+			if !strings.Contains(view, "Project") {
 				t.Fatalf("confirmation overlay should preserve the table behind it:\n%s", view)
 			}
 			if !strings.Contains(view, "Press y or Enter") {
@@ -1465,7 +1465,7 @@ func TestNewSessionRendersAsOverlay(t *testing.T) {
 			}
 
 			view := got.render()
-			if !strings.Contains(view, "Directory") {
+			if !strings.Contains(view, "Project") {
 				t.Fatalf("new-session overlay should preserve the table behind it:\n%s", view)
 			}
 			assertOverlayPlacement(t, view, tt.needle)

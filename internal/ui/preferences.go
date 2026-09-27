@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"path/filepath"
+	"strings"
+
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"github.com/j0urneyk/herdrctx/internal/herdr"
@@ -85,6 +88,10 @@ func (m model) toggleFavorite() (tea.Model, tea.Cmd) {
 	if !m.preferencesAvailable() {
 		return m, nil
 	}
+	if _, _, child := m.selectedAgent(); child {
+		m.showDialog(dialogWarning, "Select a session", "Favorites apply to session rows. Move to a session row first.")
+		return m, nil
+	}
 	s, ok := m.selectedSession()
 	if !ok {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before changing favorites.")
@@ -95,26 +102,97 @@ func (m model) toggleFavorite() (tea.Model, tea.Cmd) {
 }
 
 func (m model) navigationRows(sessions []herdr.Session, cursor int) []table.Row {
-	rows := sessionRowsWithSelection(sessions, m.table.Columns(), cursor)
-	for i, s := range sessions {
+	rows := make([]table.Row, 0, len(sessions))
+	for _, s := range sessions {
+		name := "▾ " + s.DisplayName()
 		if m.preferences.FavoriteSession(s.ID()) {
-			rows[i][0] = displayCell("⭐\ufe0f "+s.DisplayName(), columnWidth(m.table.Columns(), 0))
-			if !s.Running && i != cursor {
-				rows[i][0] = stoppedSessionRowStyle.Render(rows[i][0])
-			}
+			name = "▾ ⭐\ufe0f " + s.DisplayName()
 		}
-	}
-	if m.hosts != nil {
-		for i, s := range sessions {
-			status := s.Status()
+		status := s.Status()
+		if m.hosts != nil {
 			if h := m.hosts.entries[s.Target]; h != nil && h.stale {
 				status += " ?"
 			}
-			rows[i][1] = displayCell(status, columnWidth(m.table.Columns(), 1))
-			rows[i][2] = displayCell(hostName(s.Target), columnWidth(m.table.Columns(), 2))
+		}
+		context := ""
+		if m.hosts != nil {
+			context = hostName(s.Target)
+		}
+		values := []string{name, status, context, ""}
+		parent := m.pickerDisplayRow(values)
+		if len(rows) != cursor {
+			if !s.Running {
+				parent = styleTableRow(parent, stoppedSessionRowStyle)
+			} else {
+				parent[1] = successStyle.Render(parent[1])
+			}
+			parent[0] = titleStyle.Render(displayCell(name, columnWidth(m.table.Columns(), 0)))
+			if context != "" {
+				parent[2] = subtleStyle.Render(displayCell(context, columnWidth(m.table.Columns(), 2)))
+			}
+		}
+		rows = append(rows, parent)
+		if s.Running && s.Target == "" {
+			for _, agent := range m.agents[s.ID()] {
+				status := agent.State
+				if status == "blocked" {
+					status = "needs input"
+				}
+				values := []string{"  └ " + agentDisplayName(agent), status}
+				cwd := agent.ForegroundCWD
+				if strings.TrimSpace(cwd) == "" {
+					cwd = agent.CWD
+				}
+				project := ""
+				if strings.TrimSpace(cwd) != "" {
+					project = filepath.Base(cwd)
+				}
+				title := agent.Title
+				if strings.TrimSpace(title) == "" {
+					title = agent.TerminalTitle
+				}
+				row := m.pickerDisplayRow(append(values, project, title))
+				if len(rows) != cursor {
+					row[0] = agentNameStyle.Render(row[0])
+					row[1] = agentStatusStyle(agent.State).Render(row[1])
+					if project != "" {
+						row[2] = subtleStyle.Render(row[2])
+					}
+				}
+				rows = append(rows, row)
+			}
 		}
 	}
 	return rows
+}
+
+func (m model) pickerDisplayRow(values []string) table.Row {
+	row := make(table.Row, len(values))
+	for i, value := range values {
+		row[i] = displayCell(value, columnWidth(m.table.Columns(), i))
+	}
+	return row
+}
+
+func agentDisplayName(agent herdr.Agent) string {
+	label := agent.DisplayName
+	if strings.TrimSpace(label) == "" {
+		label = agent.Kind
+	}
+	name := agent.Name
+	if name == agent.Target || name == agent.PaneID {
+		name = ""
+	}
+	if strings.TrimSpace(name) == "" {
+		name = label
+	}
+	if strings.TrimSpace(name) == "" {
+		return "Agent"
+	}
+	if label != "" && !strings.EqualFold(name, label) {
+		return label + ": " + name
+	}
+	return name
 }
 
 func (m model) preferenceProgress() string {

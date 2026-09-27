@@ -24,6 +24,51 @@ type SessionID struct {
 	Name   string `json:"name"`
 }
 
+// Agent is a live agent reported by a running Herdr session.
+type Agent struct {
+	Name          string `json:"name"`
+	DisplayName   string `json:"display_agent"`
+	Target        string `json:"target"`
+	Kind          string `json:"agent"`
+	State         string `json:"agent_status"`
+	Message       string `json:"message"`
+	Title         string `json:"title"`
+	TerminalTitle string `json:"terminal_title_stripped"`
+	CWD           string `json:"cwd"`
+	ForegroundCWD string `json:"foreground_cwd"`
+	WorkspaceID   string `json:"workspace_id"`
+	TabID         string `json:"tab_id"`
+	PaneID        string `json:"pane_id"`
+}
+
+// ParseAgents parses the JSON output from `herdr agent list`.
+func ParseAgents(data []byte) ([]Agent, error) {
+	var response struct {
+		Result struct {
+			Agents []Agent `json:"agents"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, fmt.Errorf("parse agent list JSON: %w", err)
+	}
+	for i := range response.Result.Agents {
+		a := &response.Result.Agents[i]
+		if strings.TrimSpace(a.Target) == "" {
+			a.Target = a.PaneID
+		}
+		if strings.TrimSpace(a.Name) == "" {
+			a.Name = a.DisplayName
+		}
+		if strings.TrimSpace(a.Name) == "" {
+			a.Name = a.Target
+		}
+		if strings.TrimSpace(a.State) == "" {
+			a.State = "unknown"
+		}
+	}
+	return response.Result.Agents, nil
+}
+
 func (s Session) ID() SessionID { return SessionID{Target: s.Target, Name: s.Name} }
 
 // Status returns the short display status for a session.

@@ -81,11 +81,13 @@ type model struct {
 	table   table.Model
 	spinner spinner.Model
 
-	sessions   []herdr.Session
-	search     sessionSearch
-	dialog     *alertDialog
-	confirm    *confirmation
-	newSession *newSessionForm
+	sessions     []herdr.Session
+	agents       map[herdr.SessionID][]herdr.Agent
+	agentLoading map[herdr.SessionID]bool
+	search       sessionSearch
+	dialog       *alertDialog
+	confirm      *confirmation
+	newSession   *newSessionForm
 
 	defaultDir           string
 	completeHidden       CompletionHiddenMode
@@ -135,7 +137,18 @@ type actionFinishedMsg struct {
 type attachFinishedMsg struct {
 	Target string
 	Name   string
+	Agent  string
 	Err    error
+}
+
+type agentsLoadedMsg struct {
+	ID     herdr.SessionID
+	Agents []herdr.Agent
+	Err    error
+}
+type pickerRow struct {
+	Session herdr.Session
+	Agent   *herdr.Agent
 }
 
 // NewModel returns a Bubble Tea model for the Herdr sessions TUI.
@@ -200,6 +213,8 @@ func NewModel(opts Options) tea.Model {
 		allowNested:          opts.AllowNested,
 		allowStoppedAttach:   opts.AllowStoppedAttach,
 		loading:              true,
+		agents:               make(map[herdr.SessionID][]herdr.Agent),
+		agentLoading:         make(map[herdr.SessionID]bool),
 		refreshRequestID:     1,
 		status:               "Loading sessions…",
 		statusKind:           statusInfo,
@@ -235,7 +250,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case hostLaunchMsg:
 		return m.handleHostLaunch(msg)
 	case hostLoadedMsg:
-		return m.handleHostLoaded(msg)
+		next, cmd := m.handleHostLoaded(msg)
+		updated := next.(model)
+		if msg.Target == "" && msg.Err == nil && updated.hostVisible("") {
+			cmds := append([]tea.Cmd{cmd}, updated.loadAllAgentsCmds()...)
+			return updated, tea.Batch(cmds...)
+		}
+		return updated, cmd
 	case hostsSavedMsg:
 		return m.handleHostsSaved(msg)
 	case machinesLoadedMsg:
@@ -302,6 +323,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.setSessions(msg.Sessions)
 		m.remoteStale = false
+		cmds = append(cmds, m.loadAllAgentsCmds()...)
 		m.lastRefresh = msg.RefreshedAt
 		m.setStatus(fmt.Sprintf("Loaded %d session(s).", len(msg.Sessions)), statusSuccess)
 		m.updateDetails()
@@ -335,8 +357,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.setStatus(fmt.Sprintf("Returned from %q.", msg.Name), statusInfo)
 		}
-		cmd := m.reloadAfterAction()
-		return m, cmd
+		if msg.Err == nil && msg.Agent != "" {
+			session, ok := sessionByIdentity(m.sessions, herdr.SessionID{Target: msg.Target, Name: msg.Name})
+			if ok {
+				return m.focusAgent(session, msg.Agent)
+			}
+		}
+		return m, m.reloadAfterAction()
+
+	case agentsLoadedMsg:
+		delete(m.agentLoading, msg.ID)
+		session, ok := sessionByIdentity(m.sessions, msg.ID)
+		if !ok || !session.Running || session.Target != "" {
+			return m, nil
+		}
+		selectedName, oldCursor := m.selectedSessionSnapshot()
+		if msg.Err == nil {
+			m.agents[msg.ID] = msg.Agents
+		} else {
+			delete(m.agents, msg.ID)
+		}
+		m.configureTablePreserving(selectedName, oldCursor)
+		return m, nil
 
 	case tea.KeyPressMsg:
 		updated, cmd := m.handleKey(msg)
@@ -565,6 +607,44 @@ func (m model) attachSession(session herdr.Session) (tea.Model, tea.Cmd) {
 	})
 }
 
+func (m model) attachAgent(session herdr.Session, agent herdr.Agent) (tea.Model, tea.Cmd) {
+	if m.nestedHerdrBlocked() {
+		m.showDialog(dialogWarning, "Cannot attach from inside Herdr", m.nestedHerdrAttachMessage(session.Name, session.SocketPath))
+		return m, nil
+	}
+	if !session.Running {
+		m.showDialog(dialogWarning, "Session stopped", "Agent status is unavailable for stopped sessions.")
+		return m, nil
+	}
+	if session.Target != "" {
+		m.showDialog(dialogWarning, "Remote agent selection unavailable", "Remote agent status is read-only in this version; attach to the session row to continue.")
+		return m, nil
+	}
+	cmd, err := m.clientFor(session.Target).AttachCommand(session.Name)
+	if err != nil {
+		m.showDialog(dialogWarning, "Session cannot be attached", err.Error())
+		return m, nil
+	}
+	m.busy = fmt.Sprintf("attach agent in %q", session.Name)
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return attachFinishedMsg{Target: session.Target, Name: session.Name, Agent: agent.Target, Err: err}
+	})
+}
+
+func (m model) focusAgent(session herdr.Session, target string) (tea.Model, tea.Cmd) {
+	cmd, err := m.clientFor(session.Target).FocusAgentForSessionCommand(session.Name, target)
+	if err != nil {
+		m.showDialog(dialogError, "Agent focus failed", err.Error())
+		return m, m.reloadAfterAction()
+	}
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if err != nil {
+			return attachFinishedMsg{Target: session.Target, Name: session.Name, Err: fmt.Errorf("could not focus agent: %w", err)}
+		}
+		return attachFinishedMsg{Target: session.Target, Name: session.Name}
+	})
+}
+
 func (m model) nestedHerdrBlocked() bool {
 	return m.insideHerdr && !m.allowNested
 }
@@ -582,6 +662,10 @@ func (m model) nestedHerdrAttachMessage(target string, socketPath string) string
 }
 
 func (m model) confirmStop() (tea.Model, tea.Cmd) {
+	if _, _, child := m.selectedAgent(); child {
+		m.showDialog(dialogWarning, "Select a session", "Stop applies to session rows. Move to a session row first.")
+		return m, nil
+	}
 	session, ok := m.selectedSession()
 	if !ok {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before stopping it.")
@@ -604,6 +688,10 @@ func (m model) confirmStop() (tea.Model, tea.Cmd) {
 }
 
 func (m model) confirmDelete() (tea.Model, tea.Cmd) {
+	if _, _, child := m.selectedAgent(); child {
+		m.showDialog(dialogWarning, "Select a session", "Delete applies to session rows. Move to a session row first.")
+		return m, nil
+	}
 	session, ok := m.selectedSession()
 	if !ok {
 		m.showDialog(dialogWarning, "No session selected", "Select a session before deleting it.")
@@ -668,6 +756,23 @@ func (m model) loadSessionsCmd() tea.Cmd {
 		sessions, err := m.client.ListSessions(m.ctx)
 		return sessionsLoadedMsg{RequestID: requestID, Sessions: sessions, Err: err, RefreshedAt: time.Now()}
 	}
+}
+
+func (m model) loadAllAgentsCmds() []tea.Cmd {
+	var cmds []tea.Cmd
+	for _, session := range m.sessions {
+		if !session.Running || session.Target != "" || m.agentLoading[session.ID()] {
+			continue
+		}
+		s := session
+		client := m.clientFor(s.Target)
+		m.agentLoading[s.ID()] = true
+		cmds = append(cmds, func() tea.Msg {
+			agents, err := client.ListAgentsForSession(m.ctx, s.Name)
+			return agentsLoadedMsg{ID: s.ID(), Agents: agents, Err: err}
+		})
+	}
+	return cmds
 }
 
 func (m model) scheduleRefresh() tea.Cmd {
@@ -752,31 +857,25 @@ func (m *model) configureTablePreserving(selectedName string, oldCursor int) {
 		width = 100
 	}
 
-	dirTitle := "Directory"
-	if m.hosts != nil {
-		dirTitle = "Host"
-	}
 	tableWidth := max(40, width-2)
 	nameWidth := 24
-	statusWidth := 9
-	remaining := tableWidth - nameWidth - statusWidth - 6
-	if remaining < 24 {
+	statusWidth := 12
+	padding := 8
+	remaining := tableWidth - nameWidth - statusWidth - padding
+	if remaining < 30 {
 		nameWidth = 18
-		remaining = tableWidth - nameWidth - statusWidth - 6
+		remaining = tableWidth - nameWidth - statusWidth - padding
 	}
-	if remaining < 16 {
-		remaining = 16
+	remaining = max(16, remaining)
+	projectWidth := max(8, remaining/3)
+	titleWidth := remaining - projectWidth
+	columns := []table.Column{{Title: "Name", Width: nameWidth}, {Title: "Status", Width: statusWidth}}
+	projectTitle := "Project"
+	if m.hosts != nil {
+		projectTitle = "Host / Project"
 	}
-
-	dirWidth := remaining / 2
-	socketWidth := remaining - dirWidth
-
-	m.table.SetColumns([]table.Column{
-		{Title: "Name", Width: nameWidth},
-		{Title: "Status", Width: statusWidth},
-		{Title: dirTitle, Width: dirWidth},
-		{Title: "Socket", Width: socketWidth},
-	})
+	columns = append(columns, table.Column{Title: projectTitle, Width: projectWidth}, table.Column{Title: "Title", Width: titleWidth})
+	m.table.SetColumns(columns)
 	m.table.SetWidth(tableWidth)
 
 	height := m.height - 10 - max(0, lipgloss.Height(m.helpView())-1)
@@ -792,13 +891,24 @@ func (m *model) configureTablePreserving(selectedName string, oldCursor int) {
 func (m *model) setSessions(sessions []herdr.Session) {
 	selectedName, oldCursor := m.selectedSessionSnapshot()
 	m.sessions = sessions
+	visible := make(map[herdr.SessionID]bool, len(sessions))
+	for _, session := range sessions {
+		visible[session.ID()] = session.Running && session.Target == ""
+	}
+	for id := range m.agents {
+		if !visible[id] {
+			delete(m.agents, id)
+		}
+	}
 	m.setTableRowsPreserving(selectedName, oldCursor)
 }
 
 func (m model) selectedSessionSnapshot() (string, int) {
 	oldCursor := m.table.Cursor()
 	selectedName := ""
-	if selected, ok := m.selectedSession(); ok {
+	if selected, agent, ok := m.selectedAgent(); ok {
+		selectedName = sessionSelectionKey(selected) + "\x00agent:" + agent.Target
+	} else if selected, ok := m.selectedSession(); ok {
 		selectedName = sessionSelectionKey(selected)
 	}
 
@@ -807,37 +917,34 @@ func (m model) selectedSessionSnapshot() (string, int) {
 
 func (m *model) setTableRowsPreserving(selectedName string, oldCursor int) {
 	visible := m.visibleSessions()
-	cursor := selectedCursorForVisibleSessions(visible, selectedName, oldCursor)
+	rows := m.pickerRows(visible)
+	cursor := selectedCursorForPickerRows(rows, selectedName, oldCursor)
 	m.table.SetRows(m.navigationRows(visible, cursor))
 	m.table.SetCursor(cursor)
 }
 
-func (m *model) refreshTableRowsForCurrentCursor() {
-	m.table.SetRows(m.navigationRows(m.visibleSessions(), m.table.Cursor()))
-}
-
-func selectedCursorForVisibleSessions(visible []herdr.Session, selectedName string, oldCursor int) int {
-	if len(visible) == 0 {
+func selectedCursorForPickerRows(rows []pickerRow, selectedName string, oldCursor int) int {
+	if len(rows) == 0 {
 		return 0
 	}
-
-	cursor := oldCursor
-	if selectedName != "" {
-		for i, session := range visible {
-			if sessionSelectionKey(session) == selectedName {
-				cursor = i
-				break
-			}
+	for i, row := range rows {
+		key := sessionSelectionKey(row.Session)
+		if row.Agent != nil {
+			key += "\x00agent:" + row.Agent.Target
+		}
+		if selectedName != "" && key == selectedName {
+			return i
 		}
 	}
-	if cursor >= len(visible) {
-		cursor = len(visible) - 1
+	cursor := max(0, min(oldCursor, len(rows)-1))
+	if rows[cursor].Agent != nil {
+		return cursor
 	}
-	if cursor < 0 {
-		cursor = 0
-	}
-
 	return cursor
+}
+
+func (m *model) refreshTableRowsForCurrentCursor() {
+	m.table.SetRows(m.navigationRows(m.visibleSessions(), m.table.Cursor()))
 }
 
 func sessionRows(sessions []herdr.Session, columns []table.Column) []table.Row {
@@ -890,11 +997,40 @@ func (m model) selectedSession() (herdr.Session, bool) {
 	}
 
 	cursor := m.table.Cursor()
-	if cursor < 0 || cursor >= len(visible) {
+	rows := m.pickerRows(visible)
+	if cursor < 0 || cursor >= len(rows) {
 		return herdr.Session{}, false
 	}
+	for cursor >= 0 && rows[cursor].Agent != nil {
+		cursor--
+	}
+	if cursor < 0 {
+		return herdr.Session{}, false
+	}
+	return rows[cursor].Session, true
+}
 
-	return visible[cursor], true
+func (m model) pickerRows(sessions []herdr.Session) []pickerRow {
+	rows := make([]pickerRow, 0, len(sessions))
+	for _, session := range sessions {
+		rows = append(rows, pickerRow{Session: session})
+		if session.Running && session.Target == "" {
+			for i := range m.agents[session.ID()] {
+				agent := m.agents[session.ID()][i]
+				rows = append(rows, pickerRow{Session: session, Agent: &agent})
+			}
+		}
+	}
+	return rows
+}
+
+func (m model) selectedAgent() (herdr.Session, herdr.Agent, bool) {
+	rows := m.pickerRows(m.visibleSessions())
+	cursor := m.table.Cursor()
+	if cursor < 0 || cursor >= len(rows) || rows[cursor].Agent == nil {
+		return herdr.Session{}, herdr.Agent{}, false
+	}
+	return rows[cursor].Session, *rows[cursor].Agent, true
 }
 
 func sessionSelectionKey(s herdr.Session) string {
