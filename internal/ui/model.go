@@ -859,7 +859,7 @@ func (m *model) configureTablePreserving(selectedName string, oldCursor int) {
 
 	tableWidth := max(40, width-2)
 	nameWidth := 24
-	statusWidth := 12
+	statusWidth := 15
 	padding := 8
 	remaining := tableWidth - nameWidth - statusWidth - padding
 	if remaining < 30 {

@@ -16,6 +16,8 @@ User-visible changes are recorded here. Entries under Unreleased have not been p
 
 ### Changed
 
+- Match agent status tree indentation to the Name column and keep `needs input` fully visible.
+
 - Color session/agent names and live statuses, highlighting `needs input` in bold orange while retaining status text and a readable selection highlight.
 
 - Show agent names, project directory names, and reported titles in the picker instead of storage/socket paths and workspace/pane IDs. Keep raw session paths in details; document that Herdr can report idle while a question is pending.

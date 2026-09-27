@@ -85,7 +85,7 @@ Running local sessions show agent names, project directory names, and reported t
 
 Herdr supplies agent status; `idle` means ready for input, not proof that no question is pending. Its detector can miss a question and report `idle`; herdrctx does not inspect terminal text to override that status.
 
-Session names are blue and agent names purple. Working is cyan, `needs input` orange and bold, and done green; idle, unknown, and project context are muted gray. The selected row keeps its contrasting highlight. Status text remains visible alongside color.
+Session names are blue and agent names purple. Working is cyan, `needs input` orange and bold, and done green; idle, unknown, and project context are muted gray. The selected row keeps its contrasting highlight. Agent names and statuses share the same tree indentation. Status text remains visible alongside color.
 
 ### Saved preferences
 

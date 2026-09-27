@@ -138,7 +138,7 @@ func (m model) navigationRows(sessions []herdr.Session, cursor int) []table.Row 
 				if status == "blocked" {
 					status = "needs input"
 				}
-				values := []string{"  └ " + agentDisplayName(agent), status}
+				values := []string{"  └ " + agentDisplayName(agent), "  └ " + status}
 				cwd := agent.ForegroundCWD
 				if strings.TrimSpace(cwd) == "" {
 					cwd = agent.CWD
