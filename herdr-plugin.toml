@@ -1,8 +1,8 @@
 id = "herdrctx"
 name = "herdrctx"
-version = "0.0.4"
+version = "0.0.5"
 min_herdr_version = "0.7.0"
-description = "Standalone terminal UI for managing local Herdr sessions"
+description = "Standalone terminal UI for managing local and SSH-hosted Herdr sessions"
 platforms = ["linux", "macos"]
 
 [[build]]
