@@ -175,10 +175,6 @@ func handleRootInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 		next, cmd := m.toggleFavorite()
 		return inputConsumed(next.(model), cmd)
 	case key.Matches(msg, m.keys.Details):
-		if _, _, child := m.selectedAgent(); child {
-			m.showDialog(dialogWarning, "Select a session", "Details apply to session rows. Move to a session row first.")
-			return inputConsumed(m, nil)
-		}
 		return inputConsumed(m.openDetails(), nil)
 	case key.Matches(msg, m.keys.Up):
 		m.table.MoveUp(1)

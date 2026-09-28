@@ -10,13 +10,14 @@ import (
 )
 
 type remotePreflight struct {
-	ID        uint64
-	Session   herdr.SessionID
-	Action    string
-	Confirmed bool
-	Waiting   bool
-	Context   context.Context
-	Cancel    context.CancelFunc
+	ID          uint64
+	Session     herdr.SessionID
+	Action      string
+	AgentTarget string
+	Confirmed   bool
+	Waiting     bool
+	Context     context.Context
+	Cancel      context.CancelFunc
 }
 type remotePreflightMsg struct {
 	ID       uint64

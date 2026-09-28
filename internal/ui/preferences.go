@@ -138,7 +138,7 @@ func (m model) navigationRows(sessions []herdr.Session, cursor int) []table.Row 
 				if status == "blocked" {
 					status = "needs input"
 				}
-				values := []string{"  └ " + agentDisplayName(agent), "  └ " + status}
+				values := []string{"  └ " + agentDisplayName(agent), "└ " + status}
 				cwd := agent.ForegroundCWD
 				if strings.TrimSpace(cwd) == "" {
 					cwd = agent.CWD
@@ -147,10 +147,7 @@ func (m model) navigationRows(sessions []herdr.Session, cursor int) []table.Row 
 				if strings.TrimSpace(cwd) != "" {
 					project = filepath.Base(cwd)
 				}
-				title := agent.Title
-				if strings.TrimSpace(title) == "" {
-					title = agent.TerminalTitle
-				}
+				title := m.agentTitleView(agent)
 				row := m.pickerDisplayRow(append(values, project, title))
 				if len(rows) != cursor {
 					row[0] = agentNameStyle.Render(row[0])

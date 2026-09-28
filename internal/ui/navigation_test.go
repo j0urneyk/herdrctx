@@ -379,7 +379,7 @@ func TestAgentRowsShowUsefulContext(t *testing.T) {
 	m.agents[s.ID()] = agents
 	m.configureTable()
 	rows := m.table.Rows()
-	if ansi.Strip(rows[1][0]) != "  └ Codex" || ansi.Strip(rows[1][1]) != "  └ needs input" || ansi.Strip(rows[1][2]) != "herdrctx" || ansi.Strip(rows[1][3]) != "Approve picker changes" {
+	if ansi.Strip(rows[1][0]) != "  └ Codex" || ansi.Strip(rows[1][1]) != "└ needs input" || ansi.Strip(rows[1][2]) != "herdrctx" || ansi.Strip(rows[1][3]) != "Approve picker changes" {
 		t.Fatalf("agent context = %#v", rows[1])
 	}
 	if ansi.Strip(rows[0][2]) != "" || ansi.Strip(rows[0][3]) != "" {
@@ -429,6 +429,9 @@ func TestPickerColorsKeepAttentionAndSelectionReadable(t *testing.T) {
 	if !strings.Contains(rows[2][1], "108;112;134") {
 		t.Fatalf("idle should be muted: %q", rows[2][1])
 	}
+	if ansi.Strip(rows[2][1]) != "└ idle" {
+		t.Fatalf("agent status marker should align with parent status: %q", rows[2][1])
+	}
 	m = navKey(m, "down")
 	rows = m.table.Rows()
 	if strings.Contains(strings.Join(rows[1], ""), "\x1b") {
@@ -437,7 +440,7 @@ func TestPickerColorsKeepAttentionAndSelectionReadable(t *testing.T) {
 	if !strings.Contains(rows[0][0], "138;173;244") {
 		t.Fatalf("session should be blue: %q", rows[0][0])
 	}
-	if ansi.Strip(rows[1][1]) != "  └ needs input" {
+	if ansi.Strip(rows[1][1]) != "└ needs input" {
 		t.Fatal("color changed the selected status text")
 	}
 }

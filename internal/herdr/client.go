@@ -119,16 +119,19 @@ func (c *Client) ListAgentsForSession(ctx context.Context, sessionName string) (
 	return ParseAgents(stdout)
 }
 
-// FocusAgentForSessionCommand targets one agent in a named session.
-func (c *Client) FocusAgentForSessionCommand(sessionName, target string) (*exec.Cmd, error) {
+// FocusAgentForSession selects a local agent before attaching to its parent session.
+func (c *Client) FocusAgentForSession(ctx context.Context, sessionName, target string) error {
+	if c.Remote != nil {
+		return fmt.Errorf("agent focus is unavailable for remote sessions")
+	}
 	if _, err := ValidateSessionName(sessionName); err != nil {
-		return nil, err
+		return err
 	}
 	if strings.TrimSpace(target) == "" {
-		return nil, fmt.Errorf("agent target is required")
+		return fmt.Errorf("agent target is required")
 	}
-	// #nosec G204 -- Values are passed as separate CLI arguments; session is validated and target is a Herdr pane ID.
-	return exec.Command(c.Bin, "--session", sessionName, "agent", "focus", target), nil
+	_, err := c.run(ctx, "--session", sessionName, "agent", "focus", target)
+	return err
 }
 
 // StopSession stops a running Herdr session.

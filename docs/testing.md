@@ -12,7 +12,7 @@ Select every applicable row. Update tests when behavior changes.
 | --- | --- |
 | Go source, dependencies, or build configuration | Run the four [baseline Go checks](#baseline-go-checks). |
 | Session navigation, favorites, details, or preferences | Baseline checks and the [navigation PTY test](#navigation-through-a-pty). |
-| Local agent child rows and attach/focus | Baseline checks, the navigation PTY test, and `TestSessionAgentPicker` through the PTY harness. |
+| Local agent child rows and attach/focus | Baseline checks, the navigation PTY test, `TestSessionAgentPicker`, `TestAgentRenamingAnimation`, `TestAgentPickerShowsSelectedAgentOnAttach`, and the real-Herdr `TestAgentPickerRealSessionFocus` suite. |
 | Session creation, attach/detach, stop, or delete | Baseline checks and the [real Herdr lifecycle test](#real-herdr-lifecycle). |
 | Plugin installer or manifest | Baseline checks and [installer fixtures](#installer-fixtures); registration changes also need [local registration](#local-registration-and-nested-guards). |
 | Host catalogs, host switching, combined lists, or machine import | Baseline checks, `TestHostsNavigation` through a PTY, and `make test-integration-remote`. |
@@ -55,7 +55,7 @@ go test -tags=integration ./integration -count=1 -timeout=10m -v
 
 The tests require a native macOS or Linux host on x86_64 or arm64. The PTY harness uses [creack/pty](https://pkg.go.dev/github.com/creack/pty) as a test dependency; it is not linked into the shipped app. The installer tests exercise the actual shell installer, so its standard Unix tool requirements still apply. Python is not required.
 
-The [download helper](../integration/download_test.go) fetches missing Herdr binaries from official GitHub release assets and checks their pinned SHA-256 and version before installing them into the repository's `bin` directory. Existing cached binaries are checked too. It uses Herdr `0.6.5` at `bin/herdr-ci` for standalone compatibility and `0.7.0` at `bin/herdr-plugin-ci` for plugin registration. The normal Herdr installation is untouched. A download, digest, version, or execution failure fails the test rather than skipping it. Once dependencies, these two Herdr binaries, and the pinned herdrctx v0.0.4 archive for mixed-version preferences tests are cached, the local suites do not require network access.
+The [download helper](../integration/download_test.go) fetches missing Herdr binaries from official GitHub release assets and checks their pinned SHA-256 and version before installing them into the repository's `bin` directory. Existing cached binaries are checked too. It uses Herdr `0.6.5` at `bin/herdr-ci` for standalone compatibility and `0.7.0` at `bin/herdr-plugin-ci` for plugin registration. Agent selection additionally uses native Herdr `0.8.2` and `0.9.0` at `bin/herdr-remote-<version>`; these local checks do not require Docker. The normal Herdr installation is untouched. A download, digest, version, or execution failure fails the test rather than skipping it. Once dependencies, these four Herdr binaries, and the pinned herdrctx v0.0.4 archive for mixed-version preferences tests are cached, the local suites do not require network access.
 
 Use Go's `-run` option to select a suite, through `INTEGRATION_ARGS`:
 
@@ -96,6 +96,12 @@ The six scenarios cover:
 Each test supplies an isolated HOME, XDG directories, preferences, session fixtures, and working directory. Temporary command wrappers invoke the Go test executable in fixture mode; no separate fixture runtime is needed. Tests observe state changes rather than retrying failed scenarios. Output may arrive in complete frames or small updates, and short-lived status messages may never be rendered before a refresh. Handoff checks therefore look for the restored list footer after the foreground command's output.
 
 The PTY harness inspects terminal output without reconstructing every screen cell. Keep model/rendering unit tests for layout assertions. Emitting an emoji sequence does not establish how each terminal/font will display it.
+
+Agent regression tests in [session_agents_test.go](../internal/ui/session_agents_test.go) cover host revalidation with the captured agent target, cancellation and missing/stopped parents, stale agent responses after a session stops or disappears and returns, and session-only details while favorites are saving.
+
+Title animation tests in [agent_title_test.go](../internal/ui/agent_title_test.go) cover frame updates without a session refresh, completed titles, fallback terminal titles, hidden/removed agents, selection styling, and stale ticks. `TestAgentRenamingAnimation` uses a one-hour refresh interval and static fake CLI title to verify several spinner frames without additional input, then refreshes to the completed title.
+
+`TestAgentPickerShowsSelectedAgentOnAttach` models three same-name agent rows and asserts which pane is visible at terminal handoff. `TestAgentPickerRealSessionFocus` creates three isolated shell panes, assigns agent identities with the CLI, and verifies immediate selection on Herdr 0.6.5, 0.8.2, and 0.9.0. It also checks that parent-row attachment keeps the current workspace, then stops/deletes the test session and verifies all test shells exit. No coding-agent service or credentials are used.
 
 ### Remote navigation without Docker
 

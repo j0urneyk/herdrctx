@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -76,14 +77,16 @@ type model struct {
 	refreshInterval      time.Duration
 	version              string
 
-	keys    keyMap
-	help    help.Model
-	table   table.Model
-	spinner spinner.Model
+	keys                keyMap
+	help                help.Model
+	table               table.Model
+	spinner             spinner.Model
+	agentTitleSpinner   spinner.Model
+	agentTitleAnimating bool
 
 	sessions     []herdr.Session
 	agents       map[herdr.SessionID][]herdr.Agent
-	agentLoading map[herdr.SessionID]bool
+	agentLoading map[herdr.SessionID]agentQueryState
 	search       sessionSearch
 	dialog       *alertDialog
 	confirm      *confirmation
@@ -137,8 +140,17 @@ type actionFinishedMsg struct {
 type attachFinishedMsg struct {
 	Target string
 	Name   string
-	Agent  string
 	Err    error
+}
+
+type agentFocusFinishedMsg struct {
+	Session herdr.Session
+	Command *exec.Cmd
+	Err     error
+}
+
+type agentQueryState struct {
+	invalidated bool
 }
 
 type agentsLoadedMsg struct {
@@ -204,6 +216,7 @@ func NewModel(opts Options) tea.Model {
 		help:                 help.New(),
 		table:                t,
 		spinner:              spinnerModel(),
+		agentTitleSpinner:    spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		search:               newSessionSearch(0),
 		defaultDir:           defaultDir,
 		completeHidden:       opts.CompleteHidden.withDefault(),
@@ -214,7 +227,7 @@ func NewModel(opts Options) tea.Model {
 		allowStoppedAttach:   opts.AllowStoppedAttach,
 		loading:              true,
 		agents:               make(map[herdr.SessionID][]herdr.Agent),
-		agentLoading:         make(map[herdr.SessionID]bool),
+		agentLoading:         make(map[herdr.SessionID]agentQueryState),
 		refreshRequestID:     1,
 		status:               "Loading sessions…",
 		statusKind:           statusInfo,
@@ -236,9 +249,27 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.updateModelMessage(msg)
+	updated := next.(model)
+	animation := updated.syncAgentTitleAnimation()
+	return updated, tea.Batch(cmd, animation)
+}
+
+func (m model) updateModelMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	if spinnerMsg, ok := msg.(spinner.TickMsg); ok {
+		if spinnerMsg.ID == m.agentTitleSpinner.ID() {
+			if !m.agentTitleAnimating {
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.agentTitleSpinner, cmd = m.agentTitleSpinner.Update(spinnerMsg)
+			if cmd != nil {
+				m.refreshTableRowsForCurrentCursor()
+			}
+			return m, cmd
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(spinnerMsg)
 		if m.loading || m.busy != "" {
@@ -357,16 +388,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.setStatus(fmt.Sprintf("Returned from %q.", msg.Name), statusInfo)
 		}
-		if msg.Err == nil && msg.Agent != "" {
-			session, ok := sessionByIdentity(m.sessions, herdr.SessionID{Target: msg.Target, Name: msg.Name})
-			if ok {
-				return m.focusAgent(session, msg.Agent)
-			}
-		}
 		return m, m.reloadAfterAction()
 
+	case agentFocusFinishedMsg:
+		if msg.Err != nil {
+			m.busy = ""
+			m.showDialog(dialogError, "Agent focus failed", fmt.Sprintf("Could not select the agent in %q. No attachment was started.\n\n%v", msg.Session.Name, msg.Err))
+			return m, m.reloadAfterAction()
+		}
+		m.setStatus(fmt.Sprintf("Attaching to %q…", msg.Session.Name), statusInfo)
+		return m, tea.ExecProcess(msg.Command, func(err error) tea.Msg {
+			return attachFinishedMsg{Target: msg.Session.Target, Name: msg.Session.Name, Err: err}
+		})
+
 	case agentsLoadedMsg:
+		query := m.agentLoading[msg.ID]
 		delete(m.agentLoading, msg.ID)
+		if query.invalidated {
+			return m, tea.Batch(m.loadAllAgentsCmds()...)
+		}
 		session, ok := sessionByIdentity(m.sessions, msg.ID)
 		if !ok || !session.Running || session.Target != "" {
 			return m, nil
@@ -612,12 +652,18 @@ func (m model) attachAgent(session herdr.Session, agent herdr.Agent) (tea.Model,
 		m.showDialog(dialogWarning, "Cannot attach from inside Herdr", m.nestedHerdrAttachMessage(session.Name, session.SocketPath))
 		return m, nil
 	}
-	if !session.Running {
-		m.showDialog(dialogWarning, "Session stopped", "Agent status is unavailable for stopped sessions.")
-		return m, nil
-	}
 	if session.Target != "" {
 		m.showDialog(dialogWarning, "Remote agent selection unavailable", "Remote agent status is read-only in this version; attach to the session row to continue.")
+		return m, nil
+	}
+	if m.needsSessionCheck(session) {
+		next, cmd := m.checkRemoteSession(session, "attach", false)
+		updated := next.(model)
+		updated.remotePending.AgentTarget = agent.Target
+		return updated, cmd
+	}
+	if !session.Running {
+		m.showDialog(dialogWarning, "Session stopped", "Agent status is unavailable for stopped sessions.")
 		return m, nil
 	}
 	cmd, err := m.clientFor(session.Target).AttachCommand(session.Name)
@@ -626,23 +672,12 @@ func (m model) attachAgent(session herdr.Session, agent herdr.Agent) (tea.Model,
 		return m, nil
 	}
 	m.busy = fmt.Sprintf("attach agent in %q", session.Name)
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return attachFinishedMsg{Target: session.Target, Name: session.Name, Agent: agent.Target, Err: err}
-	})
-}
-
-func (m model) focusAgent(session herdr.Session, target string) (tea.Model, tea.Cmd) {
-	cmd, err := m.clientFor(session.Target).FocusAgentForSessionCommand(session.Name, target)
-	if err != nil {
-		m.showDialog(dialogError, "Agent focus failed", err.Error())
-		return m, m.reloadAfterAction()
+	m.setStatus(fmt.Sprintf("Selecting agent in %q…", session.Name), statusInfo)
+	client, ctx := m.clientFor(session.Target), m.ctx
+	return m, func() tea.Msg {
+		err := client.FocusAgentForSession(ctx, session.Name, agent.Target)
+		return agentFocusFinishedMsg{Session: session, Command: cmd, Err: err}
 	}
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		if err != nil {
-			return attachFinishedMsg{Target: session.Target, Name: session.Name, Err: fmt.Errorf("could not focus agent: %w", err)}
-		}
-		return attachFinishedMsg{Target: session.Target, Name: session.Name}
-	})
 }
 
 func (m model) nestedHerdrBlocked() bool {
@@ -759,14 +794,18 @@ func (m model) loadSessionsCmd() tea.Cmd {
 }
 
 func (m model) loadAllAgentsCmds() []tea.Cmd {
+	if m.busy != "" {
+		return nil
+	}
 	var cmds []tea.Cmd
 	for _, session := range m.sessions {
-		if !session.Running || session.Target != "" || m.agentLoading[session.ID()] {
+		_, loading := m.agentLoading[session.ID()]
+		if !session.Running || session.Target != "" || !m.hostVisible(session.Target) || loading {
 			continue
 		}
 		s := session
 		client := m.clientFor(s.Target)
-		m.agentLoading[s.ID()] = true
+		m.agentLoading[s.ID()] = agentQueryState{}
 		cmds = append(cmds, func() tea.Msg {
 			agents, err := client.ListAgentsForSession(m.ctx, s.Name)
 			return agentsLoadedMsg{ID: s.ID(), Agents: agents, Err: err}
@@ -894,6 +933,13 @@ func (m *model) setSessions(sessions []herdr.Session) {
 	visible := make(map[herdr.SessionID]bool, len(sessions))
 	for _, session := range sessions {
 		visible[session.ID()] = session.Running && session.Target == ""
+	}
+	// Keep the query slot until exit, but reject results from a stopped or removed session.
+	for id, query := range m.agentLoading {
+		if !visible[id] {
+			query.invalidated = true
+			m.agentLoading[id] = query
+		}
 	}
 	for id := range m.agents {
 		if !visible[id] {

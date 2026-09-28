@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"syscall"
@@ -52,14 +51,36 @@ exit 2
 	}
 }
 
-func TestFocusAgentCommandSelectsSessionAndTarget(t *testing.T) {
-	cmd, err := NewClient("herdr").FocusAgentForSessionCommand("work", "w1:p2")
-	if err != nil {
+func TestFocusAgentSelectsSessionAndTarget(t *testing.T) {
+	client := NewClient(fakeHerdr(t, `
+if [ "$#" = 5 ] && [ "$1" = "--session" ] && [ "$2" = "work" ] && [ "$3" = "agent" ] && [ "$4" = "focus" ] && [ "$5" = "w1:p2" ]; then
+  exit 0
+fi
+exit 2
+`))
+	if err := client.FocusAgentForSession(context.Background(), "work", "w1:p2"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"herdr", "--session", "work", "agent", "focus", "w1:p2"}
-	if !reflect.DeepEqual(cmd.Args, want) {
-		t.Fatalf("args = %#v, want %#v", cmd.Args, want)
+}
+
+func TestFocusAgentRejectsInvalidTargetAndRemoteClient(t *testing.T) {
+	client := NewClient("/missing/herdr")
+	for _, target := range []string{"", "  "} {
+		if err := client.FocusAgentForSession(context.Background(), "work", target); err == nil || !strings.Contains(err.Error(), "agent target is required") {
+			t.Fatalf("invalid target error = %v", err)
+		}
+	}
+	client.Remote = &RemoteTarget{Destination: "host"}
+	if err := client.FocusAgentForSession(context.Background(), "work", "w1:p2"); err == nil || !strings.Contains(err.Error(), "unavailable for remote") {
+		t.Fatalf("remote focus error = %v", err)
+	}
+}
+
+func TestFocusAgentReportsFailure(t *testing.T) {
+	client := NewClient(fakeHerdr(t, `echo '{"error":{"code":"agent_not_found","message":"selected agent exited"}}'; exit 1`))
+	err := client.FocusAgentForSession(context.Background(), "work", "w1:p2")
+	if err == nil || !strings.Contains(err.Error(), "selected agent exited") {
+		t.Fatalf("focus error = %v", err)
 	}
 }
 
