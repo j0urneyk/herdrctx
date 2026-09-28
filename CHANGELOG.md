@@ -6,6 +6,7 @@ User-visible changes are recorded here. Entries under Unreleased have not been p
 
 ### Added
 
+- Live local agent child rows in the session picker, including `needs input` status and opening the selected agent before attachment. Stopped sessions are never started for inspection; remote agent status remains read-only/unavailable through the non-interactive management bridge.
 - Explicit host switching with `H`, combined local/SSH lists with `--all-hosts`, and a separate editable host catalog selected with `--hosts-file`. Per-host refresh state keeps partial results available with up to four concurrent list queries. Combined creation asks for its destination.
 - Read-only Herdr 0.9.0+ machine import with a profile preview, duplicate/conflict handling, and preserved designated-session metadata.
 - Manage one SSH host's sessions with `--remote`: list, search, filter, favorite, inspect, attach, create, stop, and delete. Remote mode requires Herdr 0.8.2+ on both hosts; `n` uses the remote default directory and `N` reports that remote directory selection is unsupported.
@@ -15,9 +16,21 @@ User-visible changes are recorded here. Entries under Unreleased have not been p
 
 ### Changed
 
+- Align agent status tree markers with parent statuses while keeping agent names indented and `needs input` fully visible.
+
+- Color session/agent names and live statuses, highlighting `needs input` in bold orange while retaining status text and a readable selection highlight.
+
+- Show agent names, project directory names, and reported titles in the picker instead of storage/socket paths and workspace/pane IDs. Keep raw session paths in details; document that Herdr can report idle while a question is pending.
+
 - Clarify tested Herdr 0.8.2/0.9.0 installation and restart behavior, including original PATH management after native installation and the running-server compatibility limits.
 
 ### Fixed
+
+- Focus the selected local agent before attaching to its parent session, so the chosen agent is visible immediately; focus failures prevent attachment.
+
+- Animate temporary agent-title spinners before `renaming...` between refreshes and stop them when the completed title arrives.
+
+- Revalidate cached local parent sessions before agent attachment in host views, discard agent responses from stopped or removed session lifetimes, and keep session details restricted to parent rows during preference saves.
 
 - Queued host refreshes and deletion preflight respect the shared query limit before authorizing session actions.
 - Cancelling a machine-import conflict clears its replacement target, so a later import cannot overwrite the cancelled host. Long host/profile menus keep the selected row visible.

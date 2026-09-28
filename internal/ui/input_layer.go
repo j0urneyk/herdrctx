@@ -205,6 +205,10 @@ func handleRootInput(m model, msg tea.KeyPressMsg) inputLayerResult {
 		m.setStatus("Refreshing sessions…", statusInfo)
 		return inputConsumed(m, tea.Batch(cmd, m.loadSessionsCmd(), m.spinner.Tick))
 	case key.Matches(msg, m.keys.Attach):
+		if session, agent, ok := m.selectedAgent(); ok {
+			updated, cmd := m.attachAgent(session, agent)
+			return inputConsumed(updated.(model), cmd)
+		}
 		updated, cmd := m.attachSelected()
 		return inputConsumed(updated.(model), cmd)
 	case key.Matches(msg, m.keys.NewSession):

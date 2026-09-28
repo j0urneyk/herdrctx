@@ -17,6 +17,10 @@ type sessionDetails struct {
 }
 
 func (m model) openDetails() model {
+	if _, _, child := m.selectedAgent(); child {
+		m.showDialog(dialogWarning, "Select a session", "Details apply to session rows. Move to a session row first.")
+		return m
+	}
 	s, ok := m.selectedSession()
 	if !ok {
 		m.showDialog(dialogWarning, "No session selected", "Select a session to view its details.")

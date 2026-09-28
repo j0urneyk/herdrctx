@@ -2,6 +2,26 @@ package herdr
 
 import "testing"
 
+func TestParseAgents(t *testing.T) {
+	agents, err := ParseAgents([]byte(`{"result":{"agents":[{"name":"review","agent":"codex","agent_status":"blocked","message":"approve changes?","workspace_id":"w1","tab_id":"t1","pane_id":"w1:p2"}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 || agents[0].State != "blocked" || agents[0].PaneID != "w1:p2" || agents[0].Target != "w1:p2" || agents[0].Message != "approve changes?" {
+		t.Fatalf("agents = %#v", agents)
+	}
+}
+
+func TestParseAgentsDefaultsUnknownStateAndPaneTarget(t *testing.T) {
+	agents, err := ParseAgents([]byte(`{"result":{"agents":[{"target":"w1:p1"}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 || agents[0].Name != "w1:p1" || agents[0].State != "unknown" {
+		t.Fatalf("agents = %#v", agents)
+	}
+}
+
 func TestParseSessions(t *testing.T) {
 	t.Parallel()
 

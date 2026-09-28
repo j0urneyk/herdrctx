@@ -234,6 +234,9 @@ func (m model) handleHostLoaded(msg hostLoadedMsg) (tea.Model, tea.Cmd) {
 			return m, m.pumpHostQueries()
 		}
 		if p.Action == "attach" {
+			if p.AgentTarget != "" {
+				return m.attachAgent(s, herdr.Agent{Target: p.AgentTarget})
+			}
 			return m.attachSession(s)
 		}
 		confirmation := confirmation{Action: confirmAction(p.Action), Session: s}

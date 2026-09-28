@@ -215,3 +215,73 @@ func TestNavigation(t *testing.T) {
 	s.metadata["actions"] = actions()
 	s.metadata["terminal_sizes"] = []string{"160x40", "120x36", "60x20"}
 }
+
+func TestSessionAgentPicker(t *testing.T) {
+	s := newScenario(t, "session-agents")
+	herdr := s.fixture("herdr")
+	statePath := filepath.Join(s.root, "sessions.json")
+	makeSession := func(name string, running bool) session {
+		dir := filepath.Join(s.root, "session-state", name)
+		return session{Name: name, Running: running, SessionDir: dir, SocketPath: filepath.Join(dir, "herdr.sock")}
+	}
+	atomicJSON(t, statePath, sessionList{Sessions: []session{makeSession("running", true), makeSession("stopped", false)}})
+	p := s.terminal("agent-picker", repoPath(*binaryFlag), "--herdr-bin", herdr, "--interval", "3s")
+	p.expect("Loaded 2 session(s).", 0)
+	p.expect("codex: review", 0)
+	p.expect("needs in", 0)
+	p.expect("herdrctx", 0)
+	p.expect("Approve picker changes", 0)
+	// Child is the second flattened row. Focus its pane before handing off to the parent session.
+	p.send(down + enter)
+	p.expect("NAVIGATION_ATTACH_HANDOFF", 0)
+	// A stopped parent has no agent child; listing it would make the fake fail.
+	p.send("q")
+	p.waitExit()
+	var actions []invocation
+	for _, line := range strings.Split(strings.TrimSpace(string(readFile(t, filepath.Join(s.root, "actions.jsonl")))), "\n") {
+		actions = append(actions, decodeJSON[invocation](t, line))
+	}
+	if len(actions) < 2 || !slices.Equal(actions[0].Args, []string{"--session", "running", "agent", "focus", "w1:p2"}) || !slices.Equal(actions[1].Args, []string{"session", "attach", "running"}) {
+		t.Fatalf("agent attach/focus calls = %#v", actions)
+	}
+	s.check("local agent status, child attach and focus, stopped session untouched")
+}
+
+func TestAgentRenamingAnimation(t *testing.T) {
+	s := newScenario(t, "agent-renaming")
+	herdr := s.fixture("herdr")
+	statePath := filepath.Join(s.root, "sessions.json")
+	state := sessionList{Sessions: []session{{Name: "running", Running: true}}, AgentTitle: "renaming... ⠚ | herdrctx"}
+	atomicJSON(t, statePath, state)
+	p := s.terminal("agent-renaming", repoPath(*binaryFlag), "--herdr-bin", herdr, "--interval", "1h")
+	p.expect("renaming...", 0)
+	p.expect("⠙", 0)
+	p.expect("⠹", 0)
+	p.expect("⠸", 0)
+	state.AgentTitle = "Session picker review"
+	atomicJSON(t, statePath, state)
+	p.sendExpect("r", "Session picker review")
+	p.send("q")
+	p.waitExit()
+	s.check("renaming advances through multiple frames without refresh or input, then displays the completed title")
+}
+
+func TestAgentPickerShowsSelectedAgentOnAttach(t *testing.T) {
+	s := newScenario(t, "agent-attach-selection")
+	state := sessionList{
+		Sessions:     []session{{Name: "running", Running: true}},
+		AgentTargets: []string{"w1:p1", "w1:p2", "w1:p3"},
+	}
+	atomicJSON(t, filepath.Join(s.root, "sessions.json"), state)
+	p := s.terminal("agent-selection", repoPath(*binaryFlag), "--herdr-bin", s.fixture("herdr"), "--interval", "1h")
+	p.expect("codex: review", 0)
+	p.send(down + down + down + enter)
+	p.expect("NAVIGATION_ATTACH_HANDOFF", 0)
+	p.send("q")
+	p.waitExit()
+	output := p.textSince(0)
+	if !strings.Contains(output, "NAVIGATION_AGENT_VISIBLE w1:p3") {
+		t.Fatal("selected third agent, but attachment showed another agent")
+	}
+	s.check("same-name agent rows attach with the selected third pane visible")
+}

@@ -41,14 +41,14 @@ Run this **from a terminal outside Herdr**:
 herdrctx
 ```
 
-Select a running session with `↑` / `↓` and press `enter` to attach. To create one, press `n`, enter a name such as `work`, and press `enter` to create it in the current directory and attach immediately. Detach from Herdr to return to the list.
+Select a running session with `↑` / `↓` and press `enter` to attach. Live local agents appear as indented rows below their session; select one and press `enter` to focus that agent and attach to its session with the selected agent visible. `needs input` means Herdr detected an approval or question. To create a session, press `n`, enter a name such as `work`, and press `enter` to create it in the current directory and attach immediately. Detach from Herdr to return to the list.
 
 ### Keyboard shortcuts
 
 | Key | Action |
 | --- | --- |
 | `↑` / `k`, `↓` / `j` | Move up or down |
-| `enter` / `a` | Attach to the selected session (running only by default) |
+| `enter` / `a` | Attach to the selected session or open the selected local agent |
 | `/` | Search sessions |
 | `f` | Cycle all, running, and stopped sessions |
 | `o` | Switch between name order and running first |
@@ -79,7 +79,13 @@ The list starts with all sessions in name order. Use `f` to cycle through all, r
 
 Press `p` to mark the selected session with `⭐` and keep it above other matching sessions. The chosen sort applies within each group; favorites still have to match the current search and status filter. Favorites are scoped to the local host or exact SSH target and saved by exact session name. They survive deletion: a new session with the same name inherits the favorite. The default session still has its separate `*` marker.
 
-Press `i` to see full session values. Use `↑` / `↓` or `PgUp` / `PgDn` to scroll, and `enter`, `esc`, or `q` to close. Details follow refreshes and indicate when a session disappears or a refresh fails. **Directory** and directory search refer to Herdr's session-state storage path, not the project's working directory.
+Press `i` to see full session values. Use `↑` / `↓` or `PgUp` / `PgDn` to scroll, and `enter`, `esc`, or `q` to close. Details follow refreshes and indicate when a session disappears or a refresh fails. **Directory** in session details and directory search refer to Herdr's session-state storage path, not the project's working directory.
+
+Running local sessions show agent names, project directory names, and reported task or terminal titles instead of internal workspace/pane IDs. Empty context stays blank. In host views, parent rows show the host in the Project column. Session storage and socket paths remain available in session details. Agent rows show Herdr's `working`, `idle`, `done`, or `unknown` state; `blocked` appears as `needs input`. Enter on a session row keeps the existing attach behavior. Enter on a local agent row focuses that agent first, then attaches to its parent session. If focus fails because the agent exited or is unavailable, an error is shown and attachment does not start. Favorites, details, stop, and delete require a session row. In host views, selecting an agent rechecks stale or pending parent-session data before attaching. Stopped sessions are never started for inspection and have no agent rows. Remote agent status is read-only/unavailable through the non-interactive management bridge; remote session rows retain their existing behavior.
+
+Herdr supplies agent status; `idle` means ready for input, not proof that no question is pending. Its detector can miss a question and report `idle`; herdrctx does not inspect terminal text to override that status.
+
+Session names are blue and agent names purple. Working is cyan, `needs input` orange and bold, and done green; idle, unknown, and project context are muted gray. The selected row keeps its contrasting highlight. Agent names are indented; status tree markers align with parent statuses. Status text remains visible alongside color. Temporary title spinners appear before `renaming...` and animate between list refreshes. The completed title appears on the next normal refresh.
 
 ### Saved preferences
 

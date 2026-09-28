@@ -123,7 +123,8 @@ func TestHostsNavigation(t *testing.T) {
 	p.sendExpect("H", "Hosts")
 	p.sendExpect("i", "Import a machine as a saved host")
 	p.sendExpect(enter, "Replace ONE")
-	p.send("y")
+	// Disk persistence can finish before the UI handles the save result and accepts keys.
+	p.sendExpect("y", "Profile session: api")
 	s.wait("imported metadata saved", func() bool {
 		d, err := store.Load()
 		return err == nil && d.Items[0].ProfileID == "profile-one" && d.Items[0].Session == "api"
@@ -132,7 +133,7 @@ func TestHostsNavigation(t *testing.T) {
 	p.sendExpect("H", "Hosts")
 	p.sendExpect("n", "SSH destination")
 	p.send("Three\tthree")
-	p.send(enter)
+	p.sendExpect(enter, "Three · three")
 	s.wait("host added", func() bool { d, err := store.Load(); return err == nil && len(d.Items) == 3 })
 	p.sendExpect(esc, "enter/a")
 	p.quit()

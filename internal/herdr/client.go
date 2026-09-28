@@ -103,6 +103,37 @@ func (c *Client) ListSessions(ctx context.Context) ([]Session, error) {
 	return ParseSessions(stdout)
 }
 
+// ListAgentsForSession lists current agents without attaching to the session.
+// The caller must only invoke it when the session is already known to be running.
+func (c *Client) ListAgentsForSession(ctx context.Context, sessionName string) ([]Agent, error) {
+	if c.Remote != nil {
+		return nil, fmt.Errorf("agent status is read-only and unavailable for remote sessions")
+	}
+	if _, err := ValidateSessionName(sessionName); err != nil {
+		return nil, err
+	}
+	stdout, err := c.runWithOutputLimit(ctx, maxSessionListOutputBytes, "--session", sessionName, "agent", "list")
+	if err != nil {
+		return nil, err
+	}
+	return ParseAgents(stdout)
+}
+
+// FocusAgentForSession selects a local agent before attaching to its parent session.
+func (c *Client) FocusAgentForSession(ctx context.Context, sessionName, target string) error {
+	if c.Remote != nil {
+		return fmt.Errorf("agent focus is unavailable for remote sessions")
+	}
+	if _, err := ValidateSessionName(sessionName); err != nil {
+		return err
+	}
+	if strings.TrimSpace(target) == "" {
+		return fmt.Errorf("agent target is required")
+	}
+	_, err := c.run(ctx, "--session", sessionName, "agent", "focus", target)
+	return err
+}
+
 // StopSession stops a running Herdr session.
 func (c *Client) StopSession(ctx context.Context, name string) error {
 	name, err := ValidateSessionName(name)

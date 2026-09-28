@@ -21,8 +21,10 @@ type session struct {
 }
 
 type sessionList struct {
-	Sessions []session `json:"sessions"`
-	Fail     bool      `json:"fail_list,omitempty"`
+	AgentTargets []string  `json:"agent_targets,omitempty"`
+	AgentTitle   string    `json:"agent_title,omitempty"`
+	Sessions     []session `json:"sessions"`
+	Fail         bool      `json:"fail_list,omitempty"`
 }
 
 type invocation struct {
@@ -113,6 +115,37 @@ func fixtureHerdr(args []string) error {
 		_, err := os.Stdout.Write(raw)
 		return err
 	}
+	if len(args) == 4 && args[0] == "--session" && args[2] == "agent" && args[3] == "list" {
+		for _, item := range state.Sessions {
+			if item.Name == args[1] && item.Running {
+				if item.Name == "running" {
+					title := state.AgentTitle
+					if title == "" {
+						title = "Approve picker changes"
+					}
+					targets := state.AgentTargets
+					if len(targets) == 0 {
+						targets = []string{"w1:p2"}
+					}
+					var agents []map[string]string
+					for _, target := range targets {
+						agents = append(agents, map[string]string{
+							"name": "review", "agent": "codex", "agent_status": "blocked",
+							"foreground_cwd": "/projects/herdrctx", "title": title,
+							"workspace_id": "w1", "pane_id": target,
+						})
+					}
+					return json.NewEncoder(os.Stdout).Encode(map[string]any{
+						"result": map[string]any{"agents": agents},
+					})
+				} else {
+					fmt.Println(`{"result":{"agents":[]}}`)
+				}
+				return nil
+			}
+		}
+		return fmt.Errorf("agent inspection attempted for stopped or missing session %q", args[1])
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -125,7 +158,28 @@ func fixtureHerdr(args []string) error {
 		return err
 	}
 	if len(args) == 3 && slices.Equal(args[:2], []string{"session", "attach"}) {
+		if len(state.AgentTargets) > 0 {
+			target := state.AgentTargets[0]
+			// #nosec G304 G703 -- Read only the fixed focus file in the isolated fixture root.
+			focused, err := os.ReadFile(filepath.Join(root, "focused-agent.txt"))
+			if err == nil {
+				target = string(focused)
+			} else if !os.IsNotExist(err) {
+				return err
+			}
+			fmt.Println("NAVIGATION_AGENT_VISIBLE " + target)
+		}
 		fmt.Println("NAVIGATION_ATTACH_HANDOFF")
+		return nil
+	}
+	if len(args) == 5 && args[0] == "--session" && args[2] == "agent" && args[3] == "focus" {
+		if len(state.AgentTargets) > 0 {
+			// #nosec G703 -- Write only the fixed focus file in the isolated fixture root.
+			if err := os.WriteFile(filepath.Join(root, "focused-agent.txt"), []byte(args[4]), 0o600); err != nil {
+				return err
+			}
+		}
+		fmt.Println("NAVIGATION_AGENT_FOCUSED")
 		return nil
 	}
 	return fmt.Errorf("unexpected session action: %q", args)
